@@ -4,4 +4,5 @@ dnspython==2.4.2
 python-whois==0.9.4
 flask-cors==4.0.0
 urllib3==2.0.7
+PySocks==1.7.1
 gunicorn==21.2.0

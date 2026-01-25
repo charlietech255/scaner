@@ -1,4 +1,4 @@
-# app.py - Complete Web Security Scanner by Charlie Syllas and Jaguar 45 ©2026
+# app.py - Terminal-Style Web Security Scanner by Charlie Syllas and Jaguar 45 ©2026
 import os
 import socket
 import time
@@ -10,36 +10,42 @@ import queue
 import hashlib
 import base64
 import random
-from urllib.parse import urlparse
+import subprocess
+from urllib.parse import urlparse, quote
 from flask import Flask, render_template_string, request, jsonify, Response, stream_with_context
 from datetime import datetime
 import logging
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key-2026")
+app.secret_key = os.environ.get("SESSION_SECRET", "h4ck3r-s3cr3t-2026")
 
 # Disable Flask logging
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.WARNING)
 
-# HTML Template with inline CSS/JS
+# HTML Template with terminal-style CSS/JS
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SecurioScan Pro | Charlie Syllas & Jaguar 45 ©2026</title>
+    <title>root@securioscan:~$ | Charlie Syllas & Jaguar 45 ©2026</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
-            --primary: #1a1a2e;
-            --secondary: #16213e;
-            --accent: #0f3460;
-            --danger: #e94560;
-            --success: #00b894;
-            --warning: #fdcb6e;
-            --text: #f1f1f1;
-            --card-bg: rgba(255, 255, 255, 0.05);
+            --bg: #0a0a0a;
+            --terminal-bg: #000000;
+            --terminal-border: #00ff00;
+            --text: #00ff00;
+            --text-dim: #008800;
+            --text-bright: #00ff00;
+            --error: #ff5555;
+            --warning: #ffaa00;
+            --success: #00ff00;
+            --cyan: #00ffff;
+            --purple: #aa00ff;
+            --blue: #0088ff;
         }
         
         * {
@@ -49,106 +55,370 @@ HTML_TEMPLATE = '''
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            font-family: 'Courier New', monospace;
+            background: var(--bg);
             color: var(--text);
             min-height: 100vh;
-            padding: 20px;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 20% 30%, rgba(0, 255, 0, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(0, 255, 255, 0.03) 0%, transparent 50%);
+        }
+        
+        .matrix-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            opacity: 0.1;
+            pointer-events: none;
         }
         
         .container {
             max-width: 1400px;
             margin: 0 auto;
+            padding: 10px;
         }
         
-        header {
-            text-align: center;
-            padding: 30px 0;
-            border-bottom: 2px solid var(--accent);
-            margin-bottom: 30px;
+        .header {
+            border-bottom: 1px solid var(--terminal-border);
+            padding: 10px 0;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
         }
         
-        .logo {
+        .ascii-art {
+            font-family: monospace;
+            white-space: pre;
+            font-size: 12px;
+            color: var(--cyan);
+            line-height: 1.2;
+        }
+        
+        .status-bar {
+            display: flex;
+            gap: 20px;
+            color: var(--text-dim);
+            font-size: 14px;
+        }
+        
+        .status-item {
             display: flex;
             align-items: center;
-            justify-content: center;
-            gap: 15px;
-            margin-bottom: 15px;
+            gap: 5px;
         }
         
-        .logo h1 {
-            font-size: 2.5rem;
-            background: linear-gradient(45deg, var(--success), var(--warning));
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
-            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        .blink {
+            animation: blink 1s infinite;
         }
         
-        .subtitle {
-            color: #aaa;
-            font-size: 1rem;
-            letter-spacing: 2px;
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
         }
         
-        .dashboard {
+        .main-terminal {
             display: grid;
-            grid-template-columns: 300px 1fr;
-            gap: 30px;
-            min-height: 700px;
+            grid-template-columns: 250px 1fr;
+            gap: 10px;
+            height: calc(100vh - 150px);
         }
         
         .sidebar {
-            background: var(--card-bg);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 25px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid var(--terminal-border);
+            border-radius: 5px;
+            padding: 10px;
+            overflow-y: auto;
         }
         
-        .tool-btn {
-            width: 100%;
-            padding: 15px;
-            margin: 10px 0;
-            background: var(--accent);
-            color: white;
-            border: none;
-            border-radius: 8px;
+        .cmd-list {
+            list-style: none;
+        }
+        
+        .cmd-item {
+            padding: 8px 10px;
+            margin: 5px 0;
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid rgba(0, 255, 0, 0.3);
+            border-radius: 3px;
             cursor: pointer;
-            font-size: 1rem;
-            transition: all 0.3s ease;
-            text-align: left;
+            transition: all 0.2s;
+            font-size: 14px;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
         }
         
-        .tool-btn:hover {
-            background: var(--success);
+        .cmd-item:hover {
+            background: rgba(0, 255, 0, 0.2);
+            border-color: var(--success);
             transform: translateX(5px);
         }
         
-        .tool-btn.active {
-            background: var(--success);
-            box-shadow: 0 0 20px rgba(0, 184, 148, 0.3);
+        .cmd-item.active {
+            background: rgba(0, 255, 0, 0.3);
+            border-color: var(--success);
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
         }
         
-        .tool-btn.danger {
-            background: var(--danger);
+        .cmd-item.danger {
+            background: rgba(255, 0, 0, 0.1);
+            border-color: rgba(255, 0, 0, 0.3);
         }
         
-        .tool-btn.danger:hover {
-            background: #ff4757;
+        .cmd-item.danger:hover {
+            background: rgba(255, 0, 0, 0.2);
+            border-color: var(--error);
         }
         
-        .main-content {
-            background: var(--card-bg);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 30px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+        .terminal-window {
+            background: var(--terminal-bg);
+            border: 1px solid var(--terminal-border);
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            box-shadow: 0 0 30px rgba(0, 255, 0, 0.1);
+        }
+        
+        .terminal-header {
+            background: rgba(0, 20, 0, 0.8);
+            padding: 8px 15px;
+            border-bottom: 1px solid var(--terminal-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+        }
+        
+        .terminal-controls {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .control-btn {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .close-btn { background: #ff5f56; }
+        .minimize-btn { background: #ffbd2e; }
+        .maximize-btn { background: #27ca3f; }
+        
+        .terminal-body {
+            flex: 1;
+            padding: 15px;
             overflow-y: auto;
-            max-height: 700px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        
+        .prompt-line {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .prompt {
+            color: var(--cyan);
+            margin-right: 10px;
+            white-space: nowrap;
+        }
+        
+        .user { color: var(--success); }
+        .host { color: var(--purple); }
+        .path { color: var(--blue); }
+        .symbol { color: var(--text); }
+        
+        .cmd-input {
+            background: transparent;
+            border: none;
+            color: var(--text);
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            flex: 1;
+            outline: none;
+            caret-color: var(--success);
+        }
+        
+        .output {
+            margin-bottom: 15px;
+        }
+        
+        .cmd-output {
+            margin: 5px 0;
+            padding-left: 20px;
+            border-left: 2px solid rgba(0, 255, 0, 0.3);
+        }
+        
+        .help-text {
+            color: var(--text-dim);
+            font-size: 13px;
+            margin: 10px 0;
+            padding-left: 10px;
+        }
+        
+        .scan-results {
+            margin-top: 15px;
+            border-top: 1px dashed rgba(0, 255, 0, 0.3);
+            padding-top: 15px;
+        }
+        
+        .result-item {
+            margin: 8px 0;
+            padding: 8px;
+            background: rgba(0, 20, 0, 0.3);
+            border-radius: 3px;
+            border-left: 3px solid var(--success);
+            font-family: monospace;
+            font-size: 13px;
+        }
+        
+        .result-item.error {
+            border-left-color: var(--error);
+            background: rgba(255, 0, 0, 0.1);
+        }
+        
+        .result-item.warning {
+            border-left-color: var(--warning);
+            background: rgba(255, 170, 0, 0.1);
+        }
+        
+        .result-item.info {
+            border-left-color: var(--cyan);
+            background: rgba(0, 255, 255, 0.1);
+        }
+        
+        .ip-address {
+            color: var(--cyan);
+            font-weight: bold;
+        }
+        
+        .port-open {
+            color: var(--success);
+        }
+        
+        .port-closed {
+            color: var(--error);
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-right: 10px;
+            background: rgba(0, 255, 0, 0.2);
+            border: 1px solid rgba(0, 255, 0, 0.5);
+        }
+        
+        .typewriter {
+            overflow: hidden;
+            border-right: 2px solid var(--success);
+            white-space: nowrap;
+            animation: typing 3.5s steps(40, end), blink-caret 0.75s step-end infinite;
+        }
+        
+        @keyframes typing {
+            from { width: 0; }
+            to { width: 100%; }
+        }
+        
+        @keyframes blink-caret {
+            from, to { border-color: transparent; }
+            50% { border-color: var(--success); }
+        }
+        
+        .progress-container {
+            margin: 15px 0;
+            background: rgba(0, 20, 0, 0.3);
+            border-radius: 3px;
+            overflow: hidden;
+            height: 20px;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff00, #00cc00);
+            width: 0%;
+            transition: width 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .progress-bar::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, 
+                transparent, 
+                rgba(255, 255, 255, 0.4), 
+                transparent);
+            animation: shine 2s infinite;
+        }
+        
+        @keyframes shine {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        
+        .scan-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        .stat-box {
+            background: rgba(0, 20, 0, 0.3);
+            border: 1px solid rgba(0, 255, 0, 0.3);
+            border-radius: 3px;
+            padding: 10px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--success);
+        }
+        
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 15px;
+            border-top: 1px solid var(--terminal-border);
+            margin-top: 20px;
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+        
+        .matrix-char {
+            position: absolute;
+            color: var(--success);
+            font-family: monospace;
+            opacity: 0.8;
+            pointer-events: none;
         }
         
         .tool-panel {
@@ -157,581 +427,610 @@ HTML_TEMPLATE = '''
         
         .tool-panel.active {
             display: block;
-            animation: fadeIn 0.5s ease;
+            animation: fadeIn 0.3s;
         }
         
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
         
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
         
-        label {
+        .input-label {
             display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: var(--success);
+            color: var(--cyan);
+            margin-bottom: 5px;
+            font-size: 13px;
         }
         
-        input, select, textarea {
+        .terminal-input {
             width: 100%;
-            padding: 12px;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            color: white;
-            font-size: 1rem;
+            background: rgba(0, 20, 0, 0.3);
+            border: 1px solid rgba(0, 255, 0, 0.5);
+            border-radius: 3px;
+            padding: 8px 12px;
+            color: var(--text);
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
         }
         
-        input:focus, select:focus {
+        .terminal-input:focus {
             outline: none;
             border-color: var(--success);
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
         }
         
         .btn {
-            padding: 12px 30px;
-            background: var(--accent);
-            color: white;
-            border: none;
-            border-radius: 8px;
+            background: rgba(0, 255, 0, 0.2);
+            border: 1px solid rgba(0, 255, 0, 0.5);
+            color: var(--text);
+            padding: 8px 20px;
+            border-radius: 3px;
             cursor: pointer;
-            font-size: 1rem;
-            font-weight: 600;
-            transition: all 0.3s ease;
-        }
-        
-        .btn:hover {
-            background: var(--success);
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(0, 184, 148, 0.3);
-        }
-        
-        .btn-danger {
-            background: var(--danger);
-        }
-        
-        .btn-danger:hover {
-            background: #ff4757;
-        }
-        
-        .results {
-            margin-top: 30px;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 10px;
-            padding: 20px;
-            max-height: 400px;
-            overflow-y: auto;
-        }
-        
-        .result-item {
-            padding: 10px;
-            margin: 10px 0;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 5px;
-            border-left: 4px solid var(--success);
-        }
-        
-        .result-item.error {
-            border-left-color: var(--danger);
-        }
-        
-        .result-item.warning {
-            border-left-color: var(--warning);
-        }
-        
-        .status-badge {
-            display: inline-block;
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: bold;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            transition: all 0.2s;
             margin-right: 10px;
         }
         
-        .status-open { background: var(--success); }
-        .status-closed { background: var(--danger); }
-        .status-found { background: var(--success); }
-        
-        .loading {
-            display: none;
-            text-align: center;
-            padding: 20px;
+        .btn:hover {
+            background: rgba(0, 255, 0, 0.3);
+            border-color: var(--success);
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
         }
         
-        .spinner {
-            border: 4px solid rgba(255, 255, 255, 0.1);
-            border-left-color: var(--success);
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
+        .btn-danger {
+            background: rgba(255, 0, 0, 0.2);
+            border-color: rgba(255, 0, 0, 0.5);
         }
         
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+        .btn-danger:hover {
+            background: rgba(255, 0, 0, 0.3);
+            border-color: var(--error);
         }
         
-        .alert {
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            display: none;
-        }
-        
-        .alert-success {
-            background: rgba(0, 184, 148, 0.2);
-            border: 1px solid var(--success);
-        }
-        
-        .alert-danger {
-            background: rgba(233, 69, 96, 0.2);
-            border: 1px solid var(--danger);
-        }
-        
-        .progress-bar {
-            height: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 4px;
-            margin: 20px 0;
-            overflow: hidden;
-        }
-        
-        .progress {
-            height: 100%;
-            background: var(--success);
-            width: 0%;
-            transition: width 0.3s ease;
-        }
-        
-        footer {
-            text-align: center;
-            margin-top: 50px;
-            padding: 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            color: #888;
-            font-size: 0.9rem;
-        }
-        
-        .console {
-            background: #000;
-            color: #0f0;
+        .console-log {
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(0, 255, 0, 0.3);
+            border-radius: 3px;
+            padding: 10px;
             font-family: monospace;
-            padding: 15px;
-            border-radius: 5px;
+            font-size: 12px;
             max-height: 300px;
             overflow-y: auto;
+            margin-top: 15px;
             white-space: pre-wrap;
+            line-height: 1.3;
         }
         
-        .row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
+        .log-entry {
+            margin-bottom: 5px;
+            padding-left: 5px;
+            border-left: 2px solid transparent;
         }
         
-        @media (max-width: 1024px) {
-            .dashboard {
+        .log-entry.info {
+            border-left-color: var(--cyan);
+            color: var(--cyan);
+        }
+        
+        .log-entry.success {
+            border-left-color: var(--success);
+            color: var(--success);
+        }
+        
+        .log-entry.error {
+            border-left-color: var(--error);
+            color: var(--error);
+        }
+        
+        .log-entry.warning {
+            border-left-color: var(--warning);
+            color: var(--warning);
+        }
+        
+        /* Matrix rain effect */
+        #matrixCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: -1;
+            opacity: 0.1;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .main-terminal {
                 grid-template-columns: 1fr;
+                height: auto;
             }
             
-            .row {
-                grid-template-columns: 1fr;
+            .sidebar {
+                max-height: 200px;
             }
         }
     </style>
 </head>
 <body>
+    <canvas id="matrixCanvas"></canvas>
+    
     <div class="container">
-        <header>
-            <div class="logo">
-                <h1>🔒 SecurioScan Pro</h1>
+        <div class="header">
+            <div class="ascii-art">
+ _____ _____ _____ _____ _____ _____ _____ _____ 
+|   __|  |  |     |     |   __|  _  |   __|   __|
+|  |  |  |  | | | |  |  |  |  |     |   __|   __|
+|_____|_____|_|_|_|_____|_____|__|__|_____|_____|
             </div>
-            <p class="subtitle">Enterprise Security Assessment Platform | Charlie Syllas & Jaguar 45 ©2026</p>
-        </header>
-        
-        <div class="dashboard">
-            <div class="sidebar">
-                <button class="tool-btn active" onclick="showTool('scanner')">
-                    🔍 Port Scanner
-                </button>
-                <button class="tool-btn" onclick="showTool('dirbuster')">
-                    📁 Directory Discovery
-                </button>
-                <button class="tool-btn" onclick="showTool('bruteforce')">
-                    🔑 Credential Testing
-                </button>
-                <button class="tool-btn danger" onclick="showTool('dos')">
-                    ⚡ Stress Test
-                </button>
-                <button class="tool-btn" onclick="showTool('vulnscan')">
-                    🛡️ Vulnerability Scan
-                </button>
-                <button class="tool-btn" onclick="showTool('info')">
-                    ℹ️ Target Information
-                </button>
-                <button class="tool-btn" onclick="showTool('utils')">
-                    🛠️ Utilities
-                </button>
-                
-                <div style="margin-top: 40px; padding: 20px; background: rgba(0,0,0,0.3); border-radius: 10px;">
-                    <h3 style="color: var(--success); margin-bottom: 15px;">Scan Status</h3>
-                    <div id="status-indicator" style="color: #aaa;">Ready</div>
-                    <div class="progress-bar">
-                        <div class="progress" id="global-progress"></div>
-                    </div>
-                    <div id="active-scans">No active scans</div>
+            <div class="status-bar">
+                <div class="status-item">
+                    <span class="blink">●</span>
+                    <span id="connection-status">CONNECTED</span>
                 </div>
-            </div>
-            
-            <div class="main-content">
-                <!-- Port Scanner -->
-                <div id="scanner" class="tool-panel active">
-                    <h2>🛰️ Port Scanner</h2>
-                    <p>Scan target for open ports and services</p>
-                    
-                    <div class="form-group">
-                        <label for="scan-target">Target URL/IP:</label>
-                        <input type="text" id="scan-target" placeholder="example.com or 192.168.1.1" value="">
-                    </div>
-                    
-                    <div class="row">
-                        <div class="form-group">
-                            <label for="scan-type">Scan Type:</label>
-                            <select id="scan-type">
-                                <option value="quick">Quick Scan (Top 50)</option>
-                                <option value="common">Common Ports (21,22,80,443,etc)</option>
-                                <option value="full">Full Range (1-1000)</option>
-                                <option value="custom">Custom Range</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group" id="custom-ports" style="display: none;">
-                            <label for="port-range">Port Range:</label>
-                            <input type="text" id="port-range" placeholder="1-100">
-                        </div>
-                    </div>
-                    
-                    <button class="btn" onclick="startPortScan()">Start Scan</button>
-                    <button class="btn btn-danger" onclick="stopScan('port')">Stop Scan</button>
-                    
-                    <div class="results" id="scan-results">
-                        <!-- Results will appear here -->
-                    </div>
+                <div class="status-item">
+                    <i class="fas fa-shield-alt"></i>
+                    <span id="security-level">LEVEL 3</span>
                 </div>
-                
-                <!-- Directory Discovery -->
-                <div id="dirbuster" class="tool-panel">
-                    <h2>📁 Directory & File Discovery</h2>
-                    <p>Discover hidden directories and files on web servers</p>
-                    
-                    <div class="form-group">
-                        <label for="dir-target">Target URL:</label>
-                        <input type="text" id="dir-target" placeholder="https://example.com">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="wordlist-type">Wordlist:</label>
-                        <select id="wordlist-type">
-                            <option value="common">Common Directories</option>
-                            <option value="large">Large Wordlist (5000+ entries)</option>
-                            <option value="custom">Custom Wordlist (paste below)</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group" id="custom-wordlist" style="display: none;">
-                        <label for="wordlist-content">Custom Wordlist (one per line):</label>
-                        <textarea id="wordlist-content" rows="5" placeholder="admin&#10;login&#10;dashboard"></textarea>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label><input type="checkbox" id="check-extensions"> Check with extensions (.php, .html, .txt)</label>
-                    </div>
-                    
-                    <button class="btn" onclick="startDirScan()">Start Discovery</button>
-                    <button class="btn btn-danger" onclick="stopScan('dir')">Stop Scan</button>
-                    
-                    <div class="results" id="dir-results"></div>
+                <div class="status-item">
+                    <i class="fas fa-bolt"></i>
+                    <span id="system-status">OPERATIONAL</span>
                 </div>
-                
-                <!-- Bruteforce -->
-                <div id="bruteforce" class="tool-panel">
-                    <h2>🔑 Credential Testing Tool</h2>
-                    <p>Test common credentials against services (Educational Purposes Only)</p>
-                    
-                    <div class="alert alert-danger" id="brute-warning">
-                        ⚠️ This tool is for authorized security testing only. Use responsibly.
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="brute-target">Target:</label>
-                        <input type="text" id="brute-target" placeholder="http://example.com/login or ssh://server:22">
-                    </div>
-                    
-                    <div class="row">
-                        <div class="form-group">
-                            <label for="brute-type">Service Type:</label>
-                            <select id="brute-type">
-                                <option value="http-post">HTTP POST Login</option>
-                                <option value="http-basic">HTTP Basic Auth</option>
-                                <option value="ssh">SSH</option>
-                                <option value="ftp">FTP</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="threads">Threads:</label>
-                            <input type="number" id="threads" value="10" min="1" max="50">
-                        </div>
-                    </div>
-                    
-                    <div class="row">
-                        <div class="form-group">
-                            <label for="username-list">Usernames (comma separated):</label>
-                            <input type="text" id="username-list" value="admin,root,user,administrator">
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="password-list">Passwords (comma separated):</label>
-                            <input type="text" id="password-list" value="admin,123456,password,12345,1234">
-                        </div>
-                    </div>
-                    
-                    <button class="btn" onclick="startBruteForce()">Start Test</button>
-                    <button class="btn btn-danger" onclick="stopScan('brute')">Stop Test</button>
-                    
-                    <div class="console" id="brute-results"></div>
-                </div>
-                
-                <!-- DoS Tool -->
-                <div id="dos" class="tool-panel">
-                    <h2>⚡ Stress Testing Tool</h2>
-                    <p>Load testing tool for resilience assessment (Authorized Use Only)</p>
-                    
-                    <div class="alert alert-danger">
-                        ⚠️ STRICT WARNING: Use only on systems you own or have written permission to test.
-                        Unauthorized use is illegal.
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="dos-target">Target URL:</label>
-                        <input type="text" id="dos-target" placeholder="http://example.com">
-                    </div>
-                    
-                    <div class="row">
-                        <div class="form-group">
-                            <label for="dos-method">Attack Method:</label>
-                            <select id="dos-method">
-                                <option value="slowloris">Slowloris (Partial Connections)</option>
-                                <option value="http-flood">HTTP Flood</option>
-                                <option value="syn">SYN Flood Simulation</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="dos-threads">Threads:</label>
-                            <input type="number" id="dos-threads" value="100" min="1" max="500">
-                        </div>
-                    </div>
-                    
-                    <div class="row">
-                        <div class="form-group">
-                            <label for="dos-duration">Duration (seconds):</label>
-                            <input type="number" id="dos-duration" value="30" min="1" max="300">
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="dos-requests">Requests per thread:</label>
-                            <input type="number" id="dos-requests" value="100" min="1" max="1000">
-                        </div>
-                    </div>
-                    
-                    <button class="btn btn-danger" onclick="startDosTest()">Start Stress Test</button>
-                    <button class="btn" onclick="stopScan('dos')">Stop Test</button>
-                    
-                    <div class="console" id="dos-results"></div>
-                </div>
-                
-                <!-- Vulnerability Scanner -->
-                <div id="vulnscan" class="tool-panel">
-                    <h2>🛡️ Vulnerability Scanner</h2>
-                    <p>Check for common web vulnerabilities</p>
-                    
-                    <div class="form-group">
-                        <label for="vuln-target">Target URL:</label>
-                        <input type="text" id="vuln-target" placeholder="https://example.com">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Scan Types:</label>
-                        <div>
-                            <label><input type="checkbox" name="vuln-type" value="sqli" checked> SQL Injection</label><br>
-                            <label><input type="checkbox" name="vuln-type" value="xss" checked> Cross-Site Scripting (XSS)</label><br>
-                            <label><input type="checkbox" name="vuln-type" value="headers"> Security Headers</label><br>
-                            <label><input type="checkbox" name="vuln-type" value="ssl"> SSL/TLS Configuration</label><br>
-                            <label><input type="checkbox" name="vuln-type" value="cors"> CORS Misconfiguration</label>
-                        </div>
-                    </div>
-                    
-                    <button class="btn" onclick="startVulnScan()">Start Vulnerability Scan</button>
-                    
-                    <div class="results" id="vuln-results"></div>
-                </div>
-                
-                <!-- Target Info -->
-                <div id="info" class="tool-panel">
-                    <h2>ℹ️ Target Information</h2>
-                    <p>Gather information about target</p>
-                    
-                    <div class="form-group">
-                        <label for="info-target">Target URL/Domain:</label>
-                        <input type="text" id="info-target" placeholder="example.com">
-                    </div>
-                    
-                    <button class="btn" onclick="getTargetInfo()">Get Information</button>
-                    
-                    <div class="results" id="info-results"></div>
-                </div>
-                
-                <!-- Utilities -->
-                <div id="utils" class="tool-panel">
-                    <h2>🛠️ Security Utilities</h2>
-                    
-                    <div class="row">
-                        <div class="form-group">
-                            <h3>Hash Generator</h3>
-                            <input type="text" id="hash-input" placeholder="Text to hash">
-                            <button class="btn" onclick="generateHashes()">Generate</button>
-                            <textarea id="hash-output" rows="6" readonly></textarea>
-                        </div>
-                        
-                        <div class="form-group">
-                            <h3>Base64 Encode/Decode</h3>
-                            <input type="text" id="base64-input" placeholder="Text">
-                            <button class="btn" onclick="base64Encode()">Encode</button>
-                            <button class="btn" onclick="base64Decode()">Decode</button>
-                            <textarea id="base64-output" rows="4" readonly></textarea>
-                        </div>
-                    </div>
-                    
-                    <div class="row">
-                        <div class="form-group">
-                            <h3>IP Lookup</h3>
-                            <input type="text" id="ip-input" placeholder="IP address">
-                            <button class="btn" onclick="lookupIP()">Lookup</button>
-                            <div id="ip-output"></div>
-                        </div>
-                        
-                        <div class="form-group">
-                            <h3>User Agent String</h3>
-                            <button class="btn" onclick="generateUA()">Generate Random UA</button>
-                            <textarea id="ua-output" rows="3" readonly></textarea>
-                        </div>
-                    </div>
+                <div class="status-item">
+                    <i class="fas fa-user-secret"></i>
+                    <span>ANONYMOUS</span>
                 </div>
             </div>
         </div>
         
-        <footer>
-            <p>SecurioScan Pro v2.0 | Developed by Charlie Syllas & Jaguar 45 ©2026</p>
-            <p>For authorized security testing only. Use responsibly and legally.</p>
-            <p>Deployed on: {{ deployment_platform }} | Environment: {{ deployment_env }}</p>
-        </footer>
+        <div class="main-terminal">
+            <div class="sidebar">
+                <h3 style="color: var(--cyan); margin-bottom: 15px; border-bottom: 1px solid rgba(0,255,0,0.3); padding-bottom: 5px;">
+                    <i class="fas fa-terminal"></i> COMMAND MENU
+                </h3>
+                <ul class="cmd-list">
+                    <li class="cmd-item active" onclick="showTool('portscan')">
+                        <i class="fas fa-network-wired"></i> PORT SCANNER
+                    </li>
+                    <li class="cmd-item" onclick="showTool('dirscan')">
+                        <i class="fas fa-folder-tree"></i> DIRECTORY SCANNER
+                    </li>
+                    <li class="cmd-item" onclick="showTool('vulnscan')">
+                        <i class="fas fa-bug"></i> VULNERABILITY SCAN
+                    </li>
+                    <li class="cmd-item" onclick="showTool('bruteforce')">
+                        <i class="fas fa-key"></i> CREDENTIAL TESTER
+                    </li>
+                    <li class="cmd-item danger" onclick="showTool('dos')">
+                        <i class="fas fa-bomb"></i> STRESS TEST
+                    </li>
+                    <li class="cmd-item" onclick="showTool('info')">
+                        <i class="fas fa-info-circle"></i> TARGET INFO
+                    </li>
+                    <li class="cmd-item" onclick="showTool('utils')">
+                        <i class="fas fa-tools"></i> UTILITIES
+                    </li>
+                    <li class="cmd-item" onclick="showTool('help')">
+                        <i class="fas fa-question-circle"></i> HELP & COMMANDS
+                    </li>
+                </ul>
+                
+                <div style="margin-top: 30px; padding: 10px; background: rgba(0,20,0,0.3); border-radius: 3px;">
+                    <h4 style="color: var(--cyan); margin-bottom: 10px; font-size: 13px;">
+                        <i class="fas fa-chart-line"></i> SYSTEM STATS
+                    </h4>
+                    <div id="system-stats">
+                        <div>CPU: <span id="cpu-load">███░░░░░░░</span> 30%</div>
+                        <div>MEM: <span id="mem-usage">█████░░░░░</span> 50%</div>
+                        <div>NET: <span id="net-traffic">██░░░░░░░░</span> 20%</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="terminal-window">
+                <div class="terminal-header">
+                    <div>
+                        <span style="color: var(--cyan);">root</span>
+                        <span style="color: var(--text);">@</span>
+                        <span style="color: var(--purple);">securioscan</span>
+                        <span style="color: var(--text);">:</span>
+                        <span style="color: var(--blue);">~/scanner</span>
+                        <span style="color: var(--text);">$</span>
+                    </div>
+                    <div class="terminal-controls">
+                        <button class="control-btn close-btn" onclick="closeTerminal()"></button>
+                        <button class="control-btn minimize-btn" onclick="minimizeTerminal()"></button>
+                        <button class="control-btn maximize-btn" onclick="maximizeTerminal()"></button>
+                    </div>
+                </div>
+                
+                <div class="terminal-body" id="terminalOutput">
+                    <!-- Terminal output will be generated here -->
+                </div>
+                
+                <div class="prompt-line">
+                    <div class="prompt">
+                        <span class="user">root</span>
+                        <span>@</span>
+                        <span class="host">securioscan</span>
+                        <span>:</span>
+                        <span class="path">~/scanner</span>
+                        <span class="symbol">$</span>
+                    </div>
+                    <input type="text" class="cmd-input" id="terminalInput" autocomplete="off" 
+                           placeholder="Type 'help' for commands or click menu items..." 
+                           onkeypress="handleTerminalKey(event)">
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <div style="margin-bottom: 10px;">
+                <span style="color: var(--cyan);">SecurioScan Terminal v3.0</span> | 
+                <span>Charlie Syllas & Jaguar 45 ©2026</span> | 
+                <span style="color: var(--text-dim);">FOR AUTHORIZED SECURITY TESTING ONLY</span>
+            </div>
+            <div>
+                <span id="deployment-info">{{ deployment_platform }} | {{ deployment_env }} | </span>
+                <span id="current-time"></span>
+            </div>
+        </div>
     </div>
     
     <script>
-        let activeScans = {};
+        // Matrix rain effect
+        const canvas = document.getElementById('matrixCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        
+        const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$+-*/=%\"'#&_(),.;:?!\\|{}<>[]^~";
+        const charArray = chars.split("");
+        const fontSize = 14;
+        const columns = canvas.width / fontSize;
+        
+        const drops = [];
+        for(let i = 0; i < columns; i++) {
+            drops[i] = Math.floor(Math.random() * canvas.height / fontSize);
+        }
+        
+        function drawMatrix() {
+            ctx.fillStyle = "rgba(0, 0, 0, 0.04)";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = "#0F0";
+            ctx.font = `${fontSize}px monospace`;
+            
+            for(let i = 0; i < drops.length; i++) {
+                const text = charArray[Math.floor(Math.random() * charArray.length)];
+                ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                
+                if(drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                    drops[i] = 0;
+                }
+                drops[i]++;
+            }
+        }
+        
+        // Terminal functionality
+        const terminalOutput = document.getElementById('terminalOutput');
+        const terminalInput = document.getElementById('terminalInput');
+        let commandHistory = [];
+        let historyIndex = -1;
+        let currentTool = 'portscan';
+        
+        // Initialize terminal
+        function initTerminal() {
+            addOutput("Initializing SecurioScan Terminal v3.0...", "info");
+            addOutput("System boot complete. All modules operational.", "success");
+            addOutput("Type 'help' for available commands or use the menu.", "info");
+            addOutput("");
+            
+            // Show initial tool
+            showTool('portscan');
+            
+            // Update time
+            updateTime();
+            setInterval(updateTime, 1000);
+            
+            // Update system stats
+            updateSystemStats();
+            setInterval(updateSystemStats, 5000);
+            
+            // Start matrix animation
+            setInterval(drawMatrix, 50);
+        }
+        
+        function addOutput(text, type = "normal") {
+            const outputDiv = document.createElement('div');
+            outputDiv.className = `log-entry ${type}`;
+            
+            // Add timestamp
+            const now = new Date();
+            const timestamp = `[${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}]`;
+            
+            outputDiv.innerHTML = `<span style="color: var(--text-dim);">${timestamp}</span> ${text}`;
+            terminalOutput.appendChild(outputDiv);
+            
+            // Scroll to bottom
+            terminalOutput.scrollTop = terminalOutput.scrollHeight;
+        }
+        
+        function updateTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString();
+            document.getElementById('current-time').textContent = timeStr;
+        }
+        
+        function updateSystemStats() {
+            // Simulate changing system stats
+            const cpu = 20 + Math.random() * 50;
+            const mem = 30 + Math.random() * 40;
+            const net = 10 + Math.random() * 30;
+            
+            document.getElementById('cpu-load').textContent = "█".repeat(Math.floor(cpu/10)) + "░".repeat(10 - Math.floor(cpu/10));
+            document.getElementById('mem-usage').textContent = "█".repeat(Math.floor(mem/10)) + "░".repeat(10 - Math.floor(mem/10));
+            document.getElementById('net-traffic').textContent = "█".repeat(Math.floor(net/10)) + "░".repeat(10 - Math.floor(net/10));
+            
+            // Update numeric values
+            document.getElementById('cpu-load').parentNode.innerHTML = `CPU: <span id="cpu-load">${"█".repeat(Math.floor(cpu/10)) + "░".repeat(10 - Math.floor(cpu/10))}</span> ${Math.floor(cpu)}%`;
+            document.getElementById('mem-usage').parentNode.innerHTML = `MEM: <span id="mem-usage">${"█".repeat(Math.floor(mem/10)) + "░".repeat(10 - Math.floor(mem/10))}</span> ${Math.floor(mem)}%`;
+            document.getElementById('net-traffic').parentNode.innerHTML = `NET: <span id="net-traffic">${"█".repeat(Math.floor(net/10)) + "░".repeat(10 - Math.floor(net/10))}</span> ${Math.floor(net)}%`;
+        }
+        
+        function handleTerminalKey(e) {
+            if(e.key === 'Enter') {
+                const command = terminalInput.value.trim();
+                if(command) {
+                    executeCommand(command);
+                    commandHistory.push(command);
+                    historyIndex = commandHistory.length;
+                    terminalInput.value = '';
+                }
+            } else if(e.key === 'ArrowUp') {
+                e.preventDefault();
+                if(commandHistory.length > 0) {
+                    if(historyIndex > 0) historyIndex--;
+                    terminalInput.value = commandHistory[historyIndex] || '';
+                }
+            } else if(e.key === 'ArrowDown') {
+                e.preventDefault();
+                if(commandHistory.length > 0) {
+                    if(historyIndex < commandHistory.length - 1) historyIndex++;
+                    terminalInput.value = commandHistory[historyIndex] || '';
+                }
+            } else if(e.key === 'Tab') {
+                e.preventDefault();
+                // Tab completion could be implemented here
+            }
+        }
+        
+        function executeCommand(cmd) {
+            addOutput(`<span class="user">root</span>@<span class="host">securioscan</span>:<span class="path">~/scanner</span>$ ${cmd}`);
+            
+            const parts = cmd.toLowerCase().split(' ');
+            const mainCmd = parts[0];
+            
+            switch(mainCmd) {
+                case 'help':
+                    showHelp();
+                    break;
+                case 'scan':
+                    if(parts[1] === 'ports') {
+                        const target = parts[2] || prompt("Enter target:");
+                        if(target) startPortScan(target);
+                    } else if(parts[1] === 'dir') {
+                        const target = parts[2] || prompt("Enter URL:");
+                        if(target) startDirScan(target);
+                    } else {
+                        addOutput("Usage: scan ports [target] or scan dir [url]", "warning");
+                    }
+                    break;
+                case 'clear':
+                    terminalOutput.innerHTML = '';
+                    break;
+                case 'whoami':
+                    addOutput("User: root (uid=0) | System: SecurioScan Terminal v3.0", "info");
+                    break;
+                case 'date':
+                    addOutput(new Date().toString(), "info");
+                    break;
+                case 'pwd':
+                    addOutput("/root/scanner", "info");
+                    break;
+                case 'ls':
+                    addOutput("port_scanner.py  dir_scanner.py  vuln_scanner.py  utils.py", "info");
+                    break;
+                case 'exit':
+                case 'quit':
+                    addOutput("Logging out... Session terminated.", "warning");
+                    setTimeout(() => {
+                        document.body.innerHTML = '<div style="color:#0F0; font-family:monospace; text-align:center; margin-top:50px;">[CONNECTION TERMINATED]</div>';
+                    }, 1000);
+                    break;
+                default:
+                    addOutput(`Command not found: ${cmd}. Type 'help' for available commands.`, "error");
+            }
+        }
+        
+        function showHelp() {
+            addOutput("Available Commands:", "cyan");
+            addOutput("  help                 - Show this help message");
+            addOutput("  scan ports [target]  - Scan ports on target");
+            addOutput("  scan dir [url]       - Discover directories on web server");
+            addOutput("  clear                - Clear terminal");
+            addOutput("  whoami               - Show current user");
+            addOutput("  date                 - Show system date and time");
+            addOutput("  pwd                  - Print working directory");
+            addOutput("  ls                   - List files");
+            addOutput("  exit/quit            - Terminate session");
+            addOutput("");
+            addOutput("Or use the menu on the left for GUI tools.", "info");
+        }
         
         function showTool(toolId) {
-            // Hide all tool panels
-            document.querySelectorAll('.tool-panel').forEach(panel => {
-                panel.classList.remove('active');
+            // Update active menu item
+            document.querySelectorAll('.cmd-item').forEach(item => {
+                item.classList.remove('active');
             });
-            
-            // Remove active class from all buttons
-            document.querySelectorAll('.tool-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            
-            // Show selected tool
-            document.getElementById(toolId).classList.add('active');
-            
-            // Set active button
             event.target.classList.add('active');
             
-            // Handle special cases
-            if (toolId === 'scan-type') {
-                document.getElementById('scan-type').addEventListener('change', function() {
-                    document.getElementById('custom-ports').style.display = 
-                        this.value === 'custom' ? 'block' : 'none';
-                });
+            currentTool = toolId;
+            
+            // Clear terminal output
+            terminalOutput.innerHTML = '';
+            
+            // Show tool-specific interface
+            switch(toolId) {
+                case 'portscan':
+                    showPortScanTool();
+                    break;
+                case 'dirscan':
+                    showDirScanTool();
+                    break;
+                case 'vulnscan':
+                    showVulnScanTool();
+                    break;
+                case 'bruteforce':
+                    showBruteForceTool();
+                    break;
+                case 'dos':
+                    showDosTool();
+                    break;
+                case 'info':
+                    showInfoTool();
+                    break;
+                case 'utils':
+                    showUtilsTool();
+                    break;
+                case 'help':
+                    showHelpTool();
+                    break;
             }
             
-            if (toolId === 'dirbuster') {
-                document.getElementById('wordlist-type').addEventListener('change', function() {
-                    document.getElementById('custom-wordlist').style.display = 
+            // Scroll to top
+            terminalOutput.scrollTop = 0;
+        }
+        
+        function showPortScanTool() {
+            addOutput("=== PORT SCANNER TOOL ===", "success");
+            addOutput("Scan target for open ports and services", "info");
+            addOutput("");
+            
+            const html = `
+                <div class="form-group">
+                    <div class="input-label">Target (IP or Domain):</div>
+                    <input type="text" class="terminal-input" id="portTarget" placeholder="192.168.1.1 or example.com" value="example.com">
+                </div>
+                
+                <div class="form-group">
+                    <div class="input-label">Scan Type:</div>
+                    <select class="terminal-input" id="portScanType">
+                        <option value="quick">Quick Scan (Top 50)</option>
+                        <option value="common">Common Ports</option>
+                        <option value="full">Full Scan (1-1000)</option>
+                        <option value="custom">Custom Range</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" id="customPortsGroup" style="display: none;">
+                    <div class="input-label">Port Range:</div>
+                    <input type="text" class="terminal-input" id="portRange" placeholder="1-1000">
+                </div>
+                
+                <div class="form-group">
+                    <button class="btn" onclick="startPortScan()">
+                        <i class="fas fa-search"></i> START SCAN
+                    </button>
+                    <button class="btn btn-danger" onclick="stopScan('port')">
+                        <i class="fas fa-stop"></i> STOP
+                    </button>
+                </div>
+                
+                <div id="portScanResults" class="scan-results"></div>
+            `;
+            
+            addOutput(html);
+            
+            // Add event listener for scan type change
+            setTimeout(() => {
+                document.getElementById('portScanType').addEventListener('change', function() {
+                    document.getElementById('customPortsGroup').style.display = 
                         this.value === 'custom' ? 'block' : 'none';
                 });
-            }
+            }, 100);
         }
         
-        function updateStatus(message, progress = 0) {
-            document.getElementById('status-indicator').textContent = message;
-            document.getElementById('global-progress').style.width = progress + '%';
-        }
-        
-        // Port Scanner
         async function startPortScan() {
-            const target = document.getElementById('scan-target').value;
-            const scanType = document.getElementById('scan-type').value;
-            const customRange = document.getElementById('port-range').value;
+            const target = document.getElementById('portTarget')?.value || 'example.com';
+            const scanType = document.getElementById('portScanType')?.value || 'quick';
+            const portRange = document.getElementById('portRange')?.value || '1-100';
             
-            if (!target) {
-                alert('Please enter a target');
-                return;
+            addOutput(`Initiating port scan on ${target}...`, "info");
+            
+            const resultsDiv = document.getElementById('portScanResults');
+            if(resultsDiv) {
+                resultsDiv.innerHTML = `
+                    <div style="text-align: center; padding: 20px; color: var(--text-dim);">
+                        <div class="spinner" style="border: 3px solid rgba(0,255,0,0.3); border-top-color: var(--success); width: 40px; height: 40px; border-radius: 50%; margin: 0 auto 10px; animation: spin 1s linear infinite;"></div>
+                        Scanning ports...
+                        <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+                    </div>
+                `;
             }
             
-            updateStatus('Port scanning in progress...', 10);
-            
-            const resultsDiv = document.getElementById('scan-results');
-            resultsDiv.innerHTML = '<div class="loading"><div class="spinner"></div>Scanning ports...</div>';
-            
-            const response = await fetch('/api/scan/ports', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({target, scanType, customRange})
-            });
-            
-            const data = await response.json();
-            
-            if (data.error) {
-                resultsDiv.innerHTML = `<div class="result-item error">Error: ${data.error}</div>`;
-                updateStatus('Scan failed', 0);
-                return;
-            }
-            
-            let html = `<h3>Scan Results for ${target}</h3>`;
-            html += `<p>Found ${data.open_ports.length} open ports in ${data.scan_time}s</p>`;
-            
-            if (data.open_ports.length > 0) {
-                data.open_ports.forEach(port => {
-                    const service = getServiceName(port);
-                    html += `
-                        <div class="result-item">
-                            <span class="status-badge status-open">OPEN</span>
-                            <strong>Port ${port}</strong> - ${service}
-                        </div>
-                    `;
+            try {
+                const response = await fetch('/api/scan/ports', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({target, scanType, customRange: portRange})
                 });
-            } else {
-                html += '<div class="result-item">No open ports found</div>';
+                
+                const data = await response.json();
+                
+                if(data.error) {
+                    addOutput(`Error: ${data.error}`, "error");
+                    return;
+                }
+                
+                let resultsHTML = `
+                    <div class="result-item success">
+                        <strong>SCAN COMPLETE</strong><br>
+                        Target: ${data.target}<br>
+                        IP: ${data.host}<br>
+                        Open Ports: ${data.open_ports.length}<br>
+                        Scan Time: ${data.scan_time}s
+                    </div>
+                `;
+                
+                if(data.open_ports.length > 0) {
+                    resultsHTML += '<div style="margin-top: 15px;"><strong>OPEN PORTS:</strong></div>';
+                    data.open_ports.forEach(port => {
+                        const service = getServiceName(port);
+                        resultsHTML += `
+                            <div class="result-item">
+                                <span class="status-badge">PORT ${port}</span>
+                                ${service}
+                                <span style="float: right; color: var(--success);">OPEN</span>
+                            </div>
+                        `;
+                    });
+                } else {
+                    resultsHTML += '<div class="result-item warning">No open ports found.</div>';
+                }
+                
+                if(resultsDiv) {
+                    resultsDiv.innerHTML = resultsHTML;
+                }
+                
+                addOutput(`Port scan completed. Found ${data.open_ports.length} open ports.`, "success");
+                
+            } catch(error) {
+                addOutput(`Scan failed: ${error.message}`, "error");
             }
-            
-            resultsDiv.innerHTML = html;
-            updateStatus('Scan completed', 100);
         }
         
         function getServiceName(port) {
@@ -740,309 +1039,706 @@ HTML_TEMPLATE = '''
                 53: 'DNS', 80: 'HTTP', 110: 'POP3', 143: 'IMAP',
                 443: 'HTTPS', 445: 'SMB', 3306: 'MySQL',
                 3389: 'RDP', 5432: 'PostgreSQL', 8080: 'HTTP-Alt',
-                8443: 'HTTPS-Alt'
+                8443: 'HTTPS-Alt', 27017: 'MongoDB', 6379: 'Redis'
             };
-            return services[port] || 'Unknown';
+            return services[port] || 'Unknown Service';
         }
         
-        // Directory Discovery
+        function showDirScanTool() {
+            addOutput("=== DIRECTORY SCANNER ===", "success");
+            addOutput("Discover hidden directories and files on web servers", "info");
+            addOutput("");
+            
+            const html = `
+                <div class="form-group">
+                    <div class="input-label">Target URL:</div>
+                    <input type="text" class="terminal-input" id="dirTarget" placeholder="https://example.com" value="https://example.com">
+                </div>
+                
+                <div class="form-group">
+                    <div class="input-label">Wordlist:</div>
+                    <select class="terminal-input" id="dirWordlist">
+                        <option value="common">Common Directories</option>
+                        <option value="large">Large Wordlist</option>
+                        <option value="custom">Custom Wordlist</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" id="customWordlistGroup" style="display: none;">
+                    <div class="input-label">Custom Wordlist (comma separated):</div>
+                    <input type="text" class="terminal-input" id="customWordlist" placeholder="admin,login,test,backup">
+                </div>
+                
+                <div class="form-group">
+                    <button class="btn" onclick="startDirScan()">
+                        <i class="fas fa-search"></i> START DISCOVERY
+                    </button>
+                    <button class="btn btn-danger" onclick="stopScan('dir')">
+                        <i class="fas fa-stop"></i> STOP
+                    </button>
+                </div>
+                
+                <div id="dirScanResults" class="scan-results"></div>
+            `;
+            
+            addOutput(html);
+            
+            setTimeout(() => {
+                document.getElementById('dirWordlist').addEventListener('change', function() {
+                    document.getElementById('customWordlistGroup').style.display = 
+                        this.value === 'custom' ? 'block' : 'none';
+                });
+            }, 100);
+        }
+        
         async function startDirScan() {
-            const target = document.getElementById('dir-target').value;
-            const wordlistType = document.getElementById('wordlist-type').value;
-            const customWords = document.getElementById('wordlist-content').value;
+            const target = document.getElementById('dirTarget')?.value || 'https://example.com';
+            const wordlistType = document.getElementById('dirWordlist')?.value || 'common';
+            const customWords = document.getElementById('customWordlist')?.value || '';
             
-            if (!target) {
-                alert('Please enter a target URL');
-                return;
+            addOutput(`Starting directory discovery on ${target}...`, "info");
+            
+            const resultsDiv = document.getElementById('dirScanResults');
+            if(resultsDiv) {
+                resultsDiv.innerHTML = `
+                    <div style="text-align: center; padding: 20px; color: var(--text-dim);">
+                        <div class="spinner" style="border: 3px solid rgba(0,255,0,0.3); border-top-color: var(--success); width: 40px; height: 40px; border-radius: 50%; margin: 0 auto 10px; animation: spin 1s linear infinite;"></div>
+                        Discovering directories...
+                    </div>
+                `;
             }
             
-            updateStatus('Directory discovery in progress...', 20);
-            
-            const resultsDiv = document.getElementById('dir-results');
-            resultsDiv.innerHTML = '<div class="loading"><div class="spinner"></div>Discovering directories...</div>';
-            
-            const response = await fetch('/api/scan/directories', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({target, wordlistType, customWords})
-            });
-            
-            const data = await response.json();
-            
-            if (data.error) {
-                resultsDiv.innerHTML = `<div class="result-item error">Error: ${data.error}</div>`;
-                updateStatus('Discovery failed', 0);
-                return;
-            }
-            
-            let html = `<h3>Discovery Results for ${target}</h3>`;
-            html += `<p>Found ${data.found.length} accessible paths</p>`;
-            
-            if (data.found.length > 0) {
-                data.found.forEach(item => {
-                    html += `
-                        <div class="result-item">
-                            <span class="status-badge status-found">${item.status}</span>
-                            <a href="${item.url}" target="_blank">${item.path}</a>
-                            <small>(${item.size} bytes)</small>
-                        </div>
-                    `;
+            try {
+                const response = await fetch('/api/scan/directories', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({target, wordlistType, customWords})
                 });
-            } else {
-                html += '<div class="result-item">No accessible directories/files found</div>';
+                
+                const data = await response.json();
+                
+                if(data.error) {
+                    addOutput(`Error: ${data.error}`, "error");
+                    return;
+                }
+                
+                let resultsHTML = `
+                    <div class="result-item success">
+                        <strong>DISCOVERY COMPLETE</strong><br>
+                        Target: ${data.target}<br>
+                        Found: ${data.found.length} accessible paths
+                    </div>
+                `;
+                
+                if(data.found.length > 0) {
+                    resultsHTML += '<div style="margin-top: 15px;"><strong>ACCESSIBLE PATHS:</strong></div>';
+                    data.found.forEach(item => {
+                        resultsHTML += `
+                            <div class="result-item">
+                                <span class="status-badge">${item.status}</span>
+                                <a href="${item.url}" target="_blank" style="color: var(--cyan);">${item.path}</a>
+                                <span style="float: right; color: var(--text-dim);">${item.size} bytes</span>
+                            </div>
+                        `;
+                    });
+                } else {
+                    resultsHTML += '<div class="result-item warning">No accessible directories/files found.</div>';
+                }
+                
+                if(resultsDiv) {
+                    resultsDiv.innerHTML = resultsHTML;
+                }
+                
+                addOutput(`Directory discovery completed. Found ${data.found.length} paths.`, "success");
+                
+            } catch(error) {
+                addOutput(`Discovery failed: ${error.message}`, "error");
             }
-            
-            resultsDiv.innerHTML = html;
-            updateStatus('Discovery completed', 100);
         }
         
-        // Bruteforce
-        async function startBruteForce() {
-            document.getElementById('brute-warning').style.display = 'block';
+        function showVulnScanTool() {
+            addOutput("=== VULNERABILITY SCANNER ===", "success");
+            addOutput("Check for common web vulnerabilities", "info");
+            addOutput("");
             
-            const target = document.getElementById('brute-target').value;
-            const bruteType = document.getElementById('brute-type').value;
-            const usernames = document.getElementById('username-list').value.split(',');
-            const passwords = document.getElementById('password-list').value.split(',');
-            const threads = parseInt(document.getElementById('threads').value);
+            const html = `
+                <div class="form-group">
+                    <div class="input-label">Target URL:</div>
+                    <input type="text" class="terminal-input" id="vulnTarget" placeholder="https://example.com" value="https://example.com">
+                </div>
+                
+                <div class="form-group">
+                    <div class="input-label">Scan Types:</div>
+                    <div style="margin-top: 5px;">
+                        <label style="display: block; margin: 5px 0;">
+                            <input type="checkbox" name="vulnCheck" value="sqli" checked>
+                            SQL Injection
+                        </label>
+                        <label style="display: block; margin: 5px 0;">
+                            <input type="checkbox" name="vulnCheck" value="xss" checked>
+                            Cross-Site Scripting (XSS)
+                        </label>
+                        <label style="display: block; margin: 5px 0;">
+                            <input type="checkbox" name="vulnCheck" value="headers">
+                            Security Headers
+                        </label>
+                        <label style="display: block; margin: 5px 0;">
+                            <input type="checkbox" name="vulnCheck" value="ssl">
+                            SSL/TLS Configuration
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <button class="btn" onclick="startVulnScan()">
+                        <i class="fas fa-shield-alt"></i> START VULNERABILITY SCAN
+                    </button>
+                </div>
+                
+                <div id="vulnScanResults" class="scan-results"></div>
+            `;
             
-            if (!target) {
-                alert('Please enter a target');
-                return;
-            }
-            
-            updateStatus('Credential testing in progress...', 30);
-            const consoleDiv = document.getElementById('brute-results');
-            consoleDiv.innerHTML = 'Starting credential test...\\n';
-            
-            const response = await fetch('/api/tools/bruteforce', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    target, bruteType, 
-                    usernames: usernames.map(u => u.trim()),
-                    passwords: passwords.map(p => p.trim()),
-                    threads
-                })
-            });
-            
-            const data = await response.json();
-            
-            if (data.error) {
-                consoleDiv.innerHTML += `Error: ${data.error}\\n`;
-                updateStatus('Test failed', 0);
-                return;
-            }
-            
-            consoleDiv.innerHTML += `Test completed. Attempts: ${data.attempts}\\n`;
-            
-            if (data.found && data.found.length > 0) {
-                consoleDiv.innerHTML += '\\n=== CREDENTIALS FOUND ===\\n';
-                data.found.forEach(cred => {
-                    consoleDiv.innerHTML += `Username: ${cred.username} | Password: ${cred.password}\\n`;
-                });
-            } else {
-                consoleDiv.innerHTML += 'No valid credentials found\\n';
-            }
-            
-            updateStatus('Credential test completed', 100);
+            addOutput(html);
         }
         
-        // DoS Test
-        async function startDosTest() {
-            if (!confirm('⚠️ WARNING: Only use on systems you own or have permission to test. Continue?')) {
-                return;
-            }
-            
-            const target = document.getElementById('dos-target').value;
-            const method = document.getElementById('dos-method').value;
-            const threads = parseInt(document.getElementById('dos-threads').value);
-            const duration = parseInt(document.getElementById('dos-duration').value);
-            
-            if (!target) {
-                alert('Please enter a target');
-                return;
-            }
-            
-            updateStatus('Stress test running...', 50);
-            const consoleDiv = document.getElementById('dos-results');
-            consoleDiv.innerHTML = `Starting ${method} stress test on ${target}\\n`;
-            
-            const response = await fetch('/api/tools/dos', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({target, method, threads, duration})
-            });
-            
-            const data = await response.json();
-            consoleDiv.innerHTML += data.message + '\\n';
-            updateStatus('Stress test completed', 100);
-        }
-        
-        // Vulnerability Scan
         async function startVulnScan() {
-            const target = document.getElementById('vuln-target').value;
-            const checkboxes = document.querySelectorAll('input[name="vuln-type"]:checked');
+            const target = document.getElementById('vulnTarget')?.value || 'https://example.com';
+            const checkboxes = document.querySelectorAll('input[name="vulnCheck"]:checked');
             const vulnTypes = Array.from(checkboxes).map(cb => cb.value);
             
-            if (!target) {
-                alert('Please enter a target URL');
-                return;
+            addOutput(`Starting vulnerability scan on ${target}...`, "info");
+            
+            const resultsDiv = document.getElementById('vulnScanResults');
+            if(resultsDiv) {
+                resultsDiv.innerHTML = `
+                    <div style="text-align: center; padding: 20px; color: var(--text-dim);">
+                        <div class="spinner" style="border: 3px solid rgba(0,255,0,0.3); border-top-color: var(--success); width: 40px; height: 40px; border-radius: 50%; margin: 0 auto 10px; animation: spin 1s linear infinite;"></div>
+                        Scanning for vulnerabilities...
+                    </div>
+                `;
             }
             
-            updateStatus('Vulnerability scanning...', 60);
-            
-            const resultsDiv = document.getElementById('vuln-results');
-            resultsDiv.innerHTML = '<div class="loading"><div class="spinner"></div>Scanning for vulnerabilities...</div>';
-            
-            const response = await fetch('/api/scan/vulnerabilities', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({target, vulnTypes})
-            });
-            
-            const data = await response.json();
-            
-            let html = `<h3>Vulnerability Scan Results for ${target}</h3>`;
-            
-            if (data.vulnerabilities && data.vulnerabilities.length > 0) {
-                data.vulnerabilities.forEach(vuln => {
-                    html += `
-                        <div class="result-item ${vuln.severity}">
-                            <strong>${vuln.name}</strong>
-                            <p>${vuln.description}</p>
-                            <small>Risk: ${vuln.risk}</small>
-                        </div>
-                    `;
+            try {
+                const response = await fetch('/api/scan/vulnerabilities', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({target, vulnTypes})
                 });
-            } else {
-                html += '<div class="result-item">No vulnerabilities found</div>';
-            }
-            
-            if (data.recommendations) {
-                html += '<h4>Recommendations:</h4>';
-                data.recommendations.forEach(rec => {
-                    html += `<div class="result-item">${rec}</div>`;
-                });
-            }
-            
-            resultsDiv.innerHTML = html;
-            updateStatus('Vulnerability scan completed', 100);
-        }
-        
-        // Target Info
-        async function getTargetInfo() {
-            const target = document.getElementById('info-target').value;
-            
-            if (!target) {
-                alert('Please enter a target');
-                return;
-            }
-            
-            updateStatus('Gathering information...', 70);
-            
-            const resultsDiv = document.getElementById('info-results');
-            resultsDiv.innerHTML = '<div class="loading"><div class="spinner"></div>Gathering information...</div>';
-            
-            const response = await fetch('/api/tools/info', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({target})
-            });
-            
-            const data = await response.json();
-            
-            let html = `<h3>Information for ${target}</h3>`;
-            
-            for (const [key, value] of Object.entries(data)) {
-                if (value && typeof value === 'object') {
-                    html += `<strong>${key}:</strong><br>`;
-                    for (const [k, v] of Object.entries(value)) {
-                        html += `  ${k}: ${v}<br>`;
-                    }
+                
+                const data = await response.json();
+                
+                let resultsHTML = `
+                    <div class="result-item ${data.vulnerabilities && data.vulnerabilities.length > 0 ? 'warning' : 'success'}">
+                        <strong>VULNERABILITY SCAN COMPLETE</strong><br>
+                        Target: ${data.target}<br>
+                        Vulnerabilities Found: ${data.vulnerabilities ? data.vulnerabilities.length : 0}
+                    </div>
+                `;
+                
+                if(data.vulnerabilities && data.vulnerabilities.length > 0) {
+                    resultsHTML += '<div style="margin-top: 15px;"><strong>FINDINGS:</strong></div>';
+                    data.vulnerabilities.forEach(vuln => {
+                        resultsHTML += `
+                            <div class="result-item ${vuln.severity}">
+                                <strong>${vuln.name}</strong><br>
+                                ${vuln.description}<br>
+                                <small>Risk: ${vuln.risk}</small>
+                            </div>
+                        `;
+                    });
                 } else {
-                    html += `<strong>${key}:</strong> ${value}<br>`;
+                    resultsHTML += '<div class="result-item success">No vulnerabilities detected.</div>';
                 }
-                html += '<br>';
+                
+                if(data.recommendations && data.recommendations.length > 0) {
+                    resultsHTML += '<div style="margin-top: 15px;"><strong>RECOMMENDATIONS:</strong></div>';
+                    data.recommendations.forEach(rec => {
+                        resultsHTML += `<div class="result-item info">${rec}</div>`;
+                    });
+                }
+                
+                if(resultsDiv) {
+                    resultsDiv.innerHTML = resultsHTML;
+                }
+                
+                addOutput(`Vulnerability scan completed. Found ${data.vulnerabilities ? data.vulnerabilities.length : 0} issues.`, "success");
+                
+            } catch(error) {
+                addOutput(`Scan failed: ${error.message}`, "error");
             }
-            
-            resultsDiv.innerHTML = html;
-            updateStatus('Information gathered', 100);
         }
         
-        // Utilities
+        function showBruteForceTool() {
+            addOutput("=== CREDENTIAL TESTER ===", "success");
+            addOutput("Educational tool for testing authentication systems", "warning");
+            addOutput("USE ONLY ON SYSTEMS YOU OWN OR HAVE PERMISSION TO TEST", "error");
+            addOutput("");
+            
+            const html = `
+                <div class="alert" style="background: rgba(255,0,0,0.1); border: 1px solid var(--error); padding: 10px; margin-bottom: 15px; border-radius: 3px;">
+                    <i class="fas fa-exclamation-triangle"></i> FOR AUTHORIZED SECURITY TESTING ONLY
+                </div>
+                
+                <div class="form-group">
+                    <div class="input-label">Target URL:</div>
+                    <input type="text" class="terminal-input" id="bruteTarget" placeholder="http://example.com/login">
+                </div>
+                
+                <div class="form-group">
+                    <div class="input-label">Usernames (comma separated):</div>
+                    <input type="text" class="terminal-input" id="bruteUsernames" value="admin,root,user,administrator">
+                </div>
+                
+                <div class="form-group">
+                    <div class="input-label">Passwords (comma separated):</div>
+                    <input type="text" class="terminal-input" id="brutePasswords" value="admin,123456,password,12345">
+                </div>
+                
+                <div class="form-group">
+                    <button class="btn" onclick="startBruteForce()">
+                        <i class="fas fa-key"></i> START CREDENTIAL TEST
+                    </button>
+                    <button class="btn btn-danger" onclick="stopScan('brute')">
+                        <i class="fas fa-stop"></i> STOP
+                    </button>
+                </div>
+                
+                <div id="bruteResults" class="console-log"></div>
+            `;
+            
+            addOutput(html);
+        }
+        
+        async function startBruteForce() {
+            const target = document.getElementById('bruteTarget')?.value;
+            const usernames = document.getElementById('bruteUsernames')?.value.split(',') || ['admin'];
+            const passwords = document.getElementById('brutePasswords')?.value.split(',') || ['password'];
+            
+            if(!target) {
+                addOutput("Please enter a target URL", "error");
+                return;
+            }
+            
+            addOutput(`Starting credential test on ${target}...`, "info");
+            
+            const consoleDiv = document.getElementById('bruteResults');
+            if(consoleDiv) {
+                consoleDiv.innerHTML = `[${new Date().toLocaleTimeString()}] Starting credential test...\n`;
+            }
+            
+            // Simulate testing (in real app, this would call the API)
+            simulateBruteForce(target, usernames, passwords, consoleDiv);
+        }
+        
+        function simulateBruteForce(target, usernames, passwords, consoleDiv) {
+            let attempts = 0;
+            const total = usernames.length * passwords.length;
+            let found = [];
+            
+            const interval = setInterval(() => {
+                if(attempts >= total) {
+                    clearInterval(interval);
+                    const resultText = found.length > 0 
+                        ? `\n[+] CREDENTIALS FOUND:\n${found.map(c => `    ${c.username}:${c.password}`).join('\n')}`
+                        : "\n[-] No valid credentials found";
+                    
+                    if(consoleDiv) {
+                        consoleDiv.innerHTML += `\n[${new Date().toLocaleTimeString()}] Test completed. ${attempts} attempts made.${resultText}`;
+                    }
+                    addOutput(`Credential test completed. ${attempts} attempts made.`, "info");
+                    return;
+                }
+                
+                const username = usernames[Math.floor(attempts / passwords.length)];
+                const password = passwords[attempts % passwords.length];
+                attempts++;
+                
+                // Simulate checking
+                const logEntry = `[${new Date().toLocaleTimeString()}] Trying: ${username}:${password}`;
+                if(consoleDiv) {
+                    consoleDiv.innerHTML += logEntry + '\n';
+                    consoleDiv.scrollTop = consoleDiv.scrollHeight;
+                }
+                
+                // Simulate finding credentials (demo only)
+                if(username === 'admin' && password === 'admin') {
+                    found.push({username, password});
+                    if(consoleDiv) {
+                        consoleDiv.innerHTML += `[!] SUCCESS: ${username}:${password}\n`;
+                    }
+                }
+                
+                // Update progress
+                const progress = Math.floor((attempts / total) * 100);
+                if(consoleDiv && attempts % 5 === 0) {
+                    consoleDiv.innerHTML += `Progress: ${progress}%\n`;
+                }
+                
+            }, 100);
+        }
+        
+        function showDosTool() {
+            addOutput("=== STRESS TEST TOOL ===", "success");
+            addOutput("Load testing for resilience assessment", "warning");
+            addOutput("STRICTLY FOR AUTHORIZED USE ONLY - ILLEGAL WITHOUT PERMISSION", "error");
+            addOutput("");
+            
+            const html = `
+                <div class="alert" style="background: rgba(255,0,0,0.1); border: 1px solid var(--error); padding: 10px; margin-bottom: 15px; border-radius: 3px;">
+                    <i class="fas fa-skull-crossbones"></i> WARNING: Use only on systems you own or have written permission to test.
+                </div>
+                
+                <div class="form-group">
+                    <div class="input-label">Target URL:</div>
+                    <input type="text" class="terminal-input" id="dosTarget" placeholder="http://example.com">
+                </div>
+                
+                <div class="form-group">
+                    <div class="input-label">Test Type:</div>
+                    <select class="terminal-input" id="dosType">
+                        <option value="slowloris">Slowloris Simulation</option>
+                        <option value="http-flood">HTTP Flood Test</option>
+                        <option value="syn">SYN Flood Simulation</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <div class="input-label">Duration (seconds):</div>
+                    <input type="number" class="terminal-input" id="dosDuration" value="10" min="1" max="60">
+                </div>
+                
+                <div class="form-group">
+                    <button class="btn btn-danger" onclick="startDosTest()">
+                        <i class="fas fa-bolt"></i> START STRESS TEST
+                    </button>
+                    <button class="btn" onclick="stopScan('dos')">
+                        <i class="fas fa-stop"></i> STOP
+                    </button>
+                </div>
+                
+                <div id="dosResults" class="console-log"></div>
+            `;
+            
+            addOutput(html);
+        }
+        
+        async function startDosTest() {
+            if(!confirm("⚠️ CONFIRMATION REQUIRED\n\nThis tool should ONLY be used on systems you own or have explicit written permission to test.\n\nUnauthorized use is ILLEGAL and may result in criminal charges.\n\nDo you have proper authorization?")) {
+                addOutput("Stress test cancelled.", "warning");
+                return;
+            }
+            
+            const target = document.getElementById('dosTarget')?.value;
+            const dosType = document.getElementById('dosType')?.value || 'slowloris';
+            const duration = parseInt(document.getElementById('dosDuration')?.value || '10');
+            
+            if(!target) {
+                addOutput("Please enter a target URL", "error");
+                return;
+            }
+            
+            addOutput(`Initiating ${dosType} stress test on ${target} for ${duration} seconds...`, "info");
+            
+            const consoleDiv = document.getElementById('dosResults');
+            if(consoleDiv) {
+                consoleDiv.innerHTML = `[${new Date().toLocaleTimeString()}] Starting ${dosType} stress test...\n`;
+            }
+            
+            // Simulate test (in real app, this would call the API)
+            simulateDosTest(target, dosType, duration, consoleDiv);
+        }
+        
+        function simulateDosTest(target, type, duration, consoleDiv) {
+            let elapsed = 0;
+            let requests = 0;
+            
+            const interval = setInterval(() => {
+                elapsed++;
+                requests += Math.floor(Math.random() * 100) + 50;
+                
+                const logEntry = `[${new Date().toLocaleTimeString()}] ${type.toUpperCase()} - ${requests} requests sent`;
+                if(consoleDiv) {
+                    consoleDiv.innerHTML += logEntry + '\n';
+                    consoleDiv.scrollTop = consoleDiv.scrollHeight;
+                }
+                
+                if(elapsed >= duration) {
+                    clearInterval(interval);
+                    const resultText = `\n[${new Date().toLocaleTimeString()}] Test completed.\nTotal requests: ${requests}\nAverage RPS: ${Math.floor(requests/duration)}`;
+                    
+                    if(consoleDiv) {
+                        consoleDiv.innerHTML += resultText;
+                    }
+                    addOutput(`Stress test completed. ${requests} requests sent.`, "info");
+                }
+            }, 1000);
+        }
+        
+        function showInfoTool() {
+            addOutput("=== TARGET INFORMATION ===", "success");
+            addOutput("Gather information about target", "info");
+            addOutput("");
+            
+            const html = `
+                <div class="form-group">
+                    <div class="input-label">Target (URL or IP):</div>
+                    <input type="text" class="terminal-input" id="infoTarget" placeholder="example.com or 192.168.1.1" value="example.com">
+                </div>
+                
+                <div class="form-group">
+                    <button class="btn" onclick="getTargetInfo()">
+                        <i class="fas fa-info-circle"></i> GET INFORMATION
+                    </button>
+                </div>
+                
+                <div id="infoResults" class="scan-results"></div>
+            `;
+            
+            addOutput(html);
+        }
+        
+        async function getTargetInfo() {
+            const target = document.getElementById('infoTarget')?.value || 'example.com';
+            
+            addOutput(`Gathering information for ${target}...`, "info");
+            
+            const resultsDiv = document.getElementById('infoResults');
+            if(resultsDiv) {
+                resultsDiv.innerHTML = `
+                    <div style="text-align: center; padding: 20px; color: var(--text-dim);">
+                        <div class="spinner" style="border: 3px solid rgba(0,255,0,0.3); border-top-color: var(--success); width: 40px; height: 40px; border-radius: 50%; margin: 0 auto 10px; animation: spin 1s linear infinite;"></div>
+                        Collecting information...
+                    </div>
+                `;
+            }
+            
+            try {
+                const response = await fetch('/api/tools/info', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({target})
+                });
+                
+                const data = await response.json();
+                
+                if(data.error) {
+                    addOutput(`Error: ${data.error}`, "error");
+                    return;
+                }
+                
+                let resultsHTML = '<div class="result-item success"><strong>TARGET INFORMATION</strong></div>';
+                
+                for(const [key, value] of Object.entries(data)) {
+                    if(value && typeof value === 'object') {
+                        resultsHTML += `<div class="result-item"><strong>${key.toUpperCase()}:</strong><br>`;
+                        for(const [k, v] of Object.entries(value)) {
+                            resultsHTML += `  ${k}: ${v}<br>`;
+                        }
+                        resultsHTML += '</div>';
+                    } else if(value) {
+                        resultsHTML += `<div class="result-item"><strong>${key.replace('_', ' ').toUpperCase()}:</strong> ${value}</div>`;
+                    }
+                }
+                
+                if(resultsDiv) {
+                    resultsDiv.innerHTML = resultsHTML;
+                }
+                
+                addOutput(`Information gathering completed.`, "success");
+                
+            } catch(error) {
+                addOutput(`Failed to gather information: ${error.message}`, "error");
+            }
+        }
+        
+        function showUtilsTool() {
+            addOutput("=== SECURITY UTILITIES ===", "success");
+            addOutput("Various security-related tools and converters", "info");
+            addOutput("");
+            
+            const html = `
+                <div class="scan-stats">
+                    <div class="form-group">
+                        <div class="input-label">Hash Generator:</div>
+                        <input type="text" class="terminal-input" id="hashInput" placeholder="Text to hash">
+                        <button class="btn" onclick="generateHashes()" style="margin-top: 5px; width: 100%;">
+                            <i class="fas fa-hashtag"></i> GENERATE HASHES
+                        </button>
+                        <textarea class="terminal-input" id="hashOutput" rows="4" readonly style="margin-top: 5px; font-size: 11px;"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <div class="input-label">Base64 Encode/Decode:</div>
+                        <input type="text" class="terminal-input" id="base64Input" placeholder="Text">
+                        <div style="margin-top: 5px;">
+                            <button class="btn" onclick="base64Encode()" style="width: 48%;">
+                                ENCODE
+                            </button>
+                            <button class="btn" onclick="base64Decode()" style="width: 48%; float: right;">
+                                DECODE
+                            </button>
+                        </div>
+                        <textarea class="terminal-input" id="base64Output" rows="3" readonly style="margin-top: 5px; font-size: 11px;"></textarea>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <div class="input-label">User Agent String:</div>
+                    <button class="btn" onclick="generateUserAgent()" style="width: 100%;">
+                        <i class="fas fa-user-secret"></i> GENERATE RANDOM USER AGENT
+                    </button>
+                    <textarea class="terminal-input" id="uaOutput" rows="2" readonly style="margin-top: 5px; font-size: 11px;"></textarea>
+                </div>
+            `;
+            
+            addOutput(html);
+        }
+        
         async function generateHashes() {
-            const text = document.getElementById('hash-input').value;
-            if (!text) return;
+            const text = document.getElementById('hashInput')?.value;
+            if(!text) {
+                addOutput("Please enter text to hash", "warning");
+                return;
+            }
             
-            const response = await fetch('/api/utils/hash', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({text})
-            });
-            
-            const data = await response.json();
-            document.getElementById('hash-output').value = data.hashes;
+            try {
+                const response = await fetch('/api/utils/hash', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text})
+                });
+                
+                const data = await response.json();
+                document.getElementById('hashOutput').value = data.hashes;
+                addOutput("Hashes generated successfully", "success");
+            } catch(error) {
+                addOutput(`Failed to generate hashes: ${error.message}`, "error");
+            }
         }
         
         function base64Encode() {
-            const text = document.getElementById('base64-input').value;
-            if (!text) return;
-            document.getElementById('base64-output').value = btoa(text);
-        }
-        
-        function base64Decode() {
-            const text = document.getElementById('base64-input').value;
-            if (!text) return;
+            const text = document.getElementById('base64Input')?.value;
+            if(!text) {
+                addOutput("Please enter text to encode", "warning");
+                return;
+            }
+            
             try {
-                document.getElementById('base64-output').value = atob(text);
-            } catch {
-                document.getElementById('base64-output').value = 'Invalid Base64';
+                document.getElementById('base64Output').value = btoa(text);
+                addOutput("Text encoded to Base64", "success");
+            } catch(error) {
+                addOutput(`Encoding failed: ${error.message}`, "error");
             }
         }
         
-        function generateUA() {
+        function base64Decode() {
+            const text = document.getElementById('base64Input')?.value;
+            if(!text) {
+                addOutput("Please enter text to decode", "warning");
+                return;
+            }
+            
+            try {
+                document.getElementById('base64Output').value = atob(text);
+                addOutput("Base64 decoded successfully", "success");
+            } catch(error) {
+                addOutput(`Decoding failed: Invalid Base64`, "error");
+            }
+        }
+        
+        function generateUserAgent() {
             const userAgents = [
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15',
-                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15'
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
+                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36',
+                'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
+                'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0'
             ];
-            document.getElementById('ua-output').value = userAgents[Math.floor(Math.random() * userAgents.length)];
+            
+            const randomUA = userAgents[Math.floor(Math.random() * userAgents.length)];
+            document.getElementById('uaOutput').value = randomUA;
+            addOutput("Random User Agent generated", "success");
+        }
+        
+        function showHelpTool() {
+            addOutput("=== HELP & COMMANDS ===", "success");
+            addOutput("SecurioScan Terminal v3.0 - All Available Options", "info");
+            addOutput("");
+            
+            addOutput("TERMINAL COMMANDS:", "cyan");
+            addOutput("  help                 - Show command help");
+            addOutput("  scan ports [target]  - Scan target ports");
+            addOutput("  scan dir [url]       - Discover web directories");
+            addOutput("  clear                - Clear terminal");
+            addOutput("  whoami               - Show current user");
+            addOutput("  date                 - Show date/time");
+            addOutput("  pwd                  - Print working directory");
+            addOutput("  ls                   - List files");
+            addOutput("  exit/quit            - Exit terminal");
+            addOutput("");
+            
+            addOutput("GUI TOOLS (via menu):", "cyan");
+            addOutput("  Port Scanner         - Scan for open ports");
+            addOutput("  Directory Scanner    - Find hidden files/dirs");
+            addOutput("  Vulnerability Scan   - Check for web vulnerabilities");
+            addOutput("  Credential Tester    - Test authentication (AUTHORIZED USE ONLY)");
+            addOutput("  Stress Test          - Load testing (AUTHORIZED USE ONLY)");
+            addOutput("  Target Information   - Gather target details");
+            addOutput("  Utilities            - Hash, Base64, User Agent tools");
+            addOutput("");
+            
+            addOutput("KEYBOARD SHORTCUTS:", "cyan");
+            addOutput("  ↑/↓                  - Navigate command history");
+            addOutput("  Tab                  - Auto-completion");
+            addOutput("  Ctrl+C               - Stop current operation");
+            addOutput("");
+            
+            addOutput("NOTES:", "warning");
+            addOutput("  • Use attack tools ONLY on systems you own or have permission to test");
+            addOutput("  • Unauthorized scanning/attacks are illegal");
+            addOutput("  • This tool is for educational and authorized security testing only");
         }
         
         function stopScan(type) {
+            addOutput(`Stopping ${type} scan...`, "warning");
             fetch(`/api/stop/${type}`, {method: 'POST'});
-            updateStatus('Scan stopped', 0);
         }
         
-        // Initialize event listeners
-        document.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('scan-type').addEventListener('change', function() {
-                document.getElementById('custom-ports').style.display = 
-                    this.value === 'custom' ? 'block' : 'none';
-            });
-            
-            document.getElementById('wordlist-type').addEventListener('change', function() {
-                document.getElementById('custom-wordlist').style.display = 
-                    this.value === 'custom' ? 'block' : 'none';
-            });
-            
-            // Show warning for dangerous tools
-            document.querySelectorAll('.tool-btn.danger').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    setTimeout(() => {
-                        alert('⚠️ Warning: This tool should only be used on systems you own or have explicit permission to test.');
-                    }, 100);
-                });
-            });
+        function closeTerminal() {
+            if(confirm("Close terminal?")) {
+                addOutput("Terminal session terminated.", "error");
+                setTimeout(() => {
+                    document.body.innerHTML = '<div style="color:#0F0; font-family:monospace; text-align:center; margin-top:50px;">[CONNECTION CLOSED]<br><br>SecurioScan Terminal v3.0<br>Charlie Syllas & Jaguar 45 ©2026</div>';
+                }, 1000);
+            }
+        }
+        
+        function minimizeTerminal() {
+            addOutput("Terminal minimized (simulated)", "info");
+        }
+        
+        function maximizeTerminal() {
+            addOutput("Terminal maximized (simulated)", "info");
+        }
+        
+        // Initialize on load
+        window.addEventListener('load', initTerminal);
+        window.addEventListener('resize', function() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+        
+        // Focus input on click anywhere
+        document.addEventListener('click', function() {
+            terminalInput.focus();
         });
     </script>
 </body>
 </html>
 '''
 
-# Security Scanner Functions
+# Security Scanner Functions (Same as before, but updated for terminal interface)
 class SecurityScanner:
     @staticmethod
     def scan_ports(target, scan_type="quick", custom_range="1-100"):
@@ -1134,7 +1830,7 @@ class SecurityScanner:
                         wordlist.append(word + ext)
                 wordlist += [f"wp-{w}" for w in ["admin", "content", "includes", "login"]]
             elif wordlist_type == "custom" and custom_words:
-                wordlist = [w.strip() for w in custom_words.split('\n') if w.strip()]
+                wordlist = [w.strip() for w in custom_words.split(',') if w.strip()]
             else:
                 wordlist = ["admin", "login", "dashboard", "test"]
             
@@ -1170,14 +1866,13 @@ class SecurityScanner:
             attempts = 0
             
             # Simulate credential testing (educational purposes)
-            # In real implementation, you'd use proper libraries
             for username in usernames[:5]:  # Limit for demo
                 for password in passwords[:5]:
                     attempts += 1
                     # Simulate testing
                     time.sleep(0.1)
                     
-                    # Demo logic - in real tool, implement proper auth testing
+                    # Demo logic
                     if username == "admin" and password == "admin":
                         found.append({"username": username, "password": password})
             
@@ -1227,7 +1922,7 @@ class SecurityScanner:
                 except:
                     pass
             
-            # Check for common vulnerabilities
+            # Check for SQL injection
             if "sqli" in scan_types:
                 test_payloads = ["'", "\"", "1' OR '1'='1"]
                 for payload in test_payloads:
@@ -1246,6 +1941,7 @@ class SecurityScanner:
                     except:
                         pass
             
+            # Check for XSS
             if "xss" in scan_types:
                 test_payload = "<script>alert('test')</script>"
                 test_url = f"{target}?q={test_payload}"
@@ -1354,7 +2050,6 @@ def api_bruteforce():
 def api_dos_test():
     data = request.json
     # Note: Actual DoS implementation is omitted for security reasons
-    # This is just a simulation for educational purposes
     return jsonify({
         "message": f"Stress test simulation completed for {data.get('target')}",
         "status": "simulated"

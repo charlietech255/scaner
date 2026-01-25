@@ -1,12 +1,25 @@
+# JAGUAR 45 CYBER KIT v4.0 - Core Dependencies
+# Charlie Syllas & Jaguar 45 ©2026
+
+# === WEB FRAMEWORK & SERVER ===
 Flask==2.3.3
+Werkzeug==2.3.7
+gunicorn==21.2.0
+flask-cors==4.0.0
+
+# === NETWORK & SECURITY ===
 requests==2.31.0
+urllib3==2.0.7
+cryptography==41.0.7
+paramiko==3.4.0
 dnspython==2.4.2
 python-whois==0.9.4
-flask-cors==4.0.0
-urllib3==2.0.7
-beautifulsoup4==4.12.2
-cryptography==41.0.7
 pyOpenSSL==23.2.0
-paramiko==3.3.1
-aiohttp==3.8.6
-gevent==23.9.1
+
+# === PARSING & DATA PROCESSING ===
+beautifulsoup4==4.12.2
+lxml==4.9.4
+
+# === OPTIONAL ENHANCEMENTS ===
+# colorama==0.4.6  # Optional: For colored console output
+# python-dotenv==1.0.0  # Optional: For environment variables

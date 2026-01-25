@@ -1,7 +1,7 @@
 """
-JAGUAR 45 CYBER KIT v2.0 - REAL WORKING EDITION
+JAGUAR 45 CYBER KIT v2.1 - RENDER COMPATIBLE
 Developed by Charlie Syllas and Jaguar 45 in 2026
-For authorized security testing only
+Fully functional cybersecurity toolkit
 """
 
 import os
@@ -10,27 +10,25 @@ import json
 import socket
 import requests
 import threading
-import subprocess
 import ipaddress
 import time
 import hashlib
 import random
 import string
-import base64
 import re
-import dns.resolver
 import ssl
 import urllib3
 import whois
-from datetime import datetime, timedelta
-from urllib.parse import urlparse, quote, urljoin
+import dns.resolver
+from datetime import datetime
+from urllib.parse import urlparse, urljoin
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from io import StringIO
-import csv
+from http.client import HTTPConnection, HTTPSConnection
+import base64
 
 # Flask imports
-from flask import Flask, request, jsonify, render_template_string, Response, stream_with_context
-import werkzeug.serving
+from flask import Flask, request, jsonify, render_template_string, Response
+from flask_cors import CORS
 
 # Disable warnings
 import warnings
@@ -38,6 +36,7 @@ warnings.filterwarnings("ignore")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = Flask(__name__)
+CORS(app)
 
 # ========== CONFIGURATION ==========
 MAX_THREADS = 50
@@ -45,68 +44,145 @@ REQUEST_TIMEOUT = 10
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
 # ========== HTML TEMPLATE ==========
-HTML_TEMPLATE = '''
-<!DOCTYPE html>
+HTML_TEMPLATE = '''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JAGUAR 45 CYBER KIT v2.0</title>
+    <title>JAGUAR 45 CYBER KIT v2.1</title>
     <style>
+        :root {
+            --primary: #00ff00;
+            --secondary: #0a0a0a;
+            --accent: #ff00ff;
+            --warning: #ffff00;
+            --error: #ff0000;
+            --info: #00ffff;
+        }
+        
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Consolas', 'Monaco', monospace;
+            font-family: 'Courier New', monospace;
         }
         
         body {
             background: #000;
-            color: #0f0;
+            color: var(--primary);
             height: 100vh;
             overflow: hidden;
         }
         
-        .container {
+        .app-container {
             display: flex;
             height: 100vh;
+            width: 100vw;
         }
         
+        /* Sidebar */
         .sidebar {
-            width: 300px;
+            width: 280px;
             background: #111;
-            border-right: 2px solid #0f0;
-            padding: 20px;
-            overflow-y: auto;
+            border-right: 2px solid var(--primary);
+            display: flex;
+            flex-direction: column;
         }
         
+        .logo {
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid #333;
+        }
+        
+        .logo h1 {
+            color: var(--primary);
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+        
+        .logo .subtitle {
+            color: #888;
+            font-size: 11px;
+        }
+        
+        .tools-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        
+        .tool-category {
+            margin-bottom: 20px;
+        }
+        
+        .category-title {
+            color: var(--info);
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            padding-bottom: 3px;
+            border-bottom: 1px solid #333;
+        }
+        
+        .tool-btn {
+            display: block;
+            width: 100%;
+            padding: 8px 12px;
+            margin: 4px 0;
+            background: #002200;
+            border: 1px solid #0a0;
+            color: var(--primary);
+            text-align: left;
+            cursor: pointer;
+            border-radius: 3px;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        
+        .tool-btn:hover {
+            background: #004400;
+            border-color: var(--primary);
+            transform: translateX(3px);
+        }
+        
+        .tool-btn.active {
+            background: #006600;
+            border-color: var(--primary);
+            box-shadow: 0 0 10px var(--primary);
+        }
+        
+        .status-bar {
+            padding: 10px;
+            background: #111;
+            border-top: 1px solid #333;
+            font-size: 11px;
+            color: #888;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        /* Main Content */
         .main-content {
             flex: 1;
             display: flex;
             flex-direction: column;
-            background: #000;
         }
         
         .terminal-header {
             background: linear-gradient(90deg, #001a00, #003300);
             padding: 15px;
-            border-bottom: 2px solid #0f0;
+            border-bottom: 2px solid var(--primary);
             text-align: center;
         }
         
-        .header-title {
-            font-size: 24px;
+        .header-text {
+            font-size: 20px;
             font-weight: bold;
-            background: linear-gradient(90deg, #0f0, #0ff);
+            background: linear-gradient(90deg, var(--primary), var(--info));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
-        }
-        
-        .header-subtitle {
-            font-size: 12px;
-            color: #888;
-            margin-top: 5px;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
         }
         
         .terminal-body {
@@ -117,17 +193,18 @@ HTML_TEMPLATE = '''
         }
         
         .output-line {
-            margin: 5px 0;
-            padding: 3px 0;
+            margin: 3px 0;
+            padding: 2px 0;
             white-space: pre-wrap;
             word-wrap: break-word;
-            line-height: 1.4;
+            line-height: 1.3;
+            font-size: 13px;
         }
         
         .input-area {
             padding: 15px;
             background: #111;
-            border-top: 2px solid #0f0;
+            border-top: 2px solid var(--primary);
         }
         
         .input-group {
@@ -136,105 +213,79 @@ HTML_TEMPLATE = '''
         }
         
         .prompt {
-            color: #0f0;
+            color: var(--primary);
             font-weight: bold;
             margin-right: 10px;
             white-space: nowrap;
         }
         
-        .cmd-input {
+        #commandInput {
             flex: 1;
             background: transparent;
-            border: 1px solid #0f0;
-            color: #0f0;
-            padding: 10px;
+            border: 1px solid var(--primary);
+            color: var(--primary);
+            padding: 8px;
             font-size: 14px;
             outline: none;
             border-radius: 3px;
         }
         
-        .cmd-input:focus {
-            box-shadow: 0 0 10px #0f0;
+        #commandInput:focus {
+            box-shadow: 0 0 10px var(--primary);
         }
         
-        .tool-category {
-            margin-bottom: 20px;
-        }
-        
-        .category-title {
-            color: #0ff;
-            font-size: 16px;
-            font-weight: bold;
-            margin-bottom: 10px;
-            padding-bottom: 5px;
-            border-bottom: 1px solid #333;
-        }
-        
-        .tool-btn {
-            display: block;
-            width: 100%;
-            padding: 10px;
-            margin: 5px 0;
-            background: #002200;
-            border: 1px solid #0a0;
-            color: #0f0;
-            text-align: left;
-            cursor: pointer;
-            transition: all 0.3s;
-            border-radius: 3px;
-            font-size: 14px;
-        }
-        
-        .tool-btn:hover {
-            background: #004400;
-            border-color: #0f0;
-            transform: translateX(5px);
-            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
-        }
-        
-        .tool-btn.active {
-            background: #006600;
-            border-color: #0f0;
-            box-shadow: 0 0 15px rgba(0, 255, 0, 0.5);
-        }
-        
-        .status-bar {
-            padding: 10px;
-            background: #111;
-            border-top: 1px solid #333;
-            font-size: 12px;
-            color: #888;
-            display: flex;
-            justify-content: space-between;
-        }
-        
+        /* Results */
         .result-box {
             background: #111;
             border: 1px solid #333;
             border-radius: 5px;
             padding: 15px;
             margin: 10px 0;
-            max-height: 300px;
+            max-height: 400px;
             overflow-y: auto;
         }
         
-        .success { color: #0f0; }
-        .error { color: #f00; }
-        .warning { color: #ff0; }
-        .info { color: #0ff; }
-        .highlight { color: #f0f; }
-        
-        .blink {
-            animation: blink 1s infinite;
+        .result-title {
+            color: var(--info);
+            font-weight: bold;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 5px;
         }
         
-        @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+            font-size: 12px;
         }
         
+        .table th, .table td {
+            border: 1px solid #333;
+            padding: 6px;
+            text-align: left;
+        }
+        
+        .table th {
+            background: #002200;
+            color: var(--primary);
+        }
+        
+        .table tr:nth-child(even) {
+            background: #0a0a0a;
+        }
+        
+        /* Colors */
+        .success { color: var(--primary); }
+        .error { color: var(--error); }
+        .warning { color: var(--warning); }
+        .info { color: var(--info); }
+        .highlight { color: var(--accent); }
+        .dim { color: #008800; }
+        
+        /* Scrollbar */
         ::-webkit-scrollbar {
-            width: 10px;
+            width: 8px;
         }
         
         ::-webkit-scrollbar-track {
@@ -242,146 +293,154 @@ HTML_TEMPLATE = '''
         }
         
         ::-webkit-scrollbar-thumb {
-            background: #0a0;
-            border-radius: 5px;
+            background: var(--primary);
+            border-radius: 4px;
         }
         
-        ::-webkit-scrollbar-thumb:hover {
-            background: #0f0;
+        /* Animations */
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
         }
         
-        .table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 10px 0;
+        .blink {
+            animation: blink 1s infinite;
         }
         
-        .table th, .table td {
-            border: 1px solid #333;
-            padding: 8px;
-            text-align: left;
-        }
-        
-        .table th {
-            background: #002200;
-            color: #0f0;
-        }
-        
-        .table tr:nth-child(even) {
-            background: #111;
-        }
-        
-        .btn {
-            padding: 8px 15px;
-            background: #003300;
-            border: 1px solid #0a0;
-            color: #0f0;
-            cursor: pointer;
-            border-radius: 3px;
-            margin: 2px;
-        }
-        
-        .btn:hover {
-            background: #005500;
+        /* Responsive */
+        @media (max-width: 768px) {
+            .app-container {
+                flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+                height: 200px;
+                border-right: none;
+                border-bottom: 2px solid var(--primary);
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="app-container">
+        <!-- Sidebar -->
         <div class="sidebar">
-            <div class="tool-category">
-                <div class="category-title">🔍 RECONNAISSANCE</div>
-                <button class="tool-btn" onclick="runTool('port_scan')">1. Port Scanner</button>
-                <button class="tool-btn" onclick="runTool('dir_scan')">2. Directory Scanner</button>
-                <button class="tool-btn" onclick="runTool('subdomain')">3. Subdomain Finder</button>
-                <button class="tool-btn" onclick="runTool('whois')">4. WHOIS Lookup</button>
-                <button class="tool-btn" onclick="runTool('dns_enum')">5. DNS Enumeration</button>
-                <button class="tool-btn" onclick="runTool('header_scan')">6. Header Analyzer</button>
-                <button class="tool-btn" onclick="runTool('ssl_scan')">7. SSL Scanner</button>
+            <div class="logo">
+                <h1>JAGUAR 45</h1>
+                <div class="subtitle">CYBER KIT v2.1</div>
+                <div class="subtitle">Authorized Use Only</div>
             </div>
             
-            <div class="tool-category">
-                <div class="category-title">⚡ ATTACK TOOLS</div>
-                <button class="tool-btn" onclick="runTool('dos_test')">8. DoS Stress Test</button>
-                <button class="tool-btn" onclick="runTool('bruteforce')">9. Password Bruteforce</button>
-                <button class="tool-btn" onclick="runTool('sqli')">10. SQL Injection</button>
-                <button class="tool-btn" onclick="runTool('xss')">11. XSS Scanner</button>
-                <button class="tool-btn" onclick="runTool('hash_crack')">12. Hash Cracker</button>
-            </div>
-            
-            <div class="tool-category">
-                <div class="category-title">📡 NETWORK TOOLS</div>
-                <button class="tool-btn" onclick="runTool('ip_info')">13. IP Information</button>
-                <button class="tool-btn" onclick="runTool('geoip')">14. GeoIP Lookup</button>
-                <button class="tool-btn" onclick="runTool('reverse_ip')">15. Reverse IP</button>
-                <button class="tool-btn" onclick="runTool('traceroute')">16. Traceroute</button>
-                <button class="tool-btn" onclick="runTool('ping')">17. Ping Tool</button>
-            </div>
-            
-            <div class="tool-category">
-                <div class="category-title">🔐 SECURITY</div>
-                <button class="tool-btn" onclick="runTool('pwd_check')">18. Password Checker</button>
-                <button class="tool-btn" onclick="runTool('encrypt')">19. Encrypt/Decrypt</button>
-                <button class="tool-btn" onclick="runTool('vuln_scan')">20. Vulnerability Scan</button>
-                <button class="tool-btn" onclick="runTool('web_crawl')">21. Web Crawler</button>
-                <button class="tool-btn" onclick="runTool('backup_find')">22. Backup Finder</button>
-            </div>
-            
-            <div class="tool-category">
-                <div class="category-title">⚙️ UTILITIES</div>
-                <button class="tool-btn" onclick="runTool('help')">Help</button>
-                <button class="tool-btn" onclick="clearTerminal()">Clear</button>
-                <button class="tool-btn" onclick="runTool('system_info')">System Info</button>
-                <button class="tool-btn" onclick="runTool('about')">About</button>
+            <div class="tools-list">
+                <div class="tool-category">
+                    <div class="category-title">🔍 RECON TOOLS</div>
+                    <button class="tool-btn" onclick="runTool(1)">1. Port Scanner</button>
+                    <button class="tool-btn" onclick="runTool(2)">2. Directory Scanner</button>
+                    <button class="tool-btn" onclick="runTool(3)">3. Subdomain Finder</button>
+                    <button class="tool-btn" onclick="runTool(4)">4. WHOIS Lookup</button>
+                    <button class="tool-btn" onclick="runTool(5)">5. DNS Records</button>
+                    <button class="tool-btn" onclick="runTool(6)">6. Header Analyzer</button>
+                    <button class="tool-btn" onclick="runTool(7)">7. SSL Checker</button>
+                </div>
+                
+                <div class="tool-category">
+                    <div class="category-title">⚡ ATTACK TOOLS</div>
+                    <button class="tool-btn" onclick="runTool(8)">8. DoS Test</button>
+                    <button class="tool-btn" onclick="runTool(9)">9. Password Test</button>
+                    <button class="tool-btn" onclick="runTool(10)">10. SQLi Scanner</button>
+                    <button class="tool-btn" onclick="runTool(11)">11. XSS Scanner</button>
+                    <button class="tool-btn" onclick="runTool(12)">12. Hash Cracker</button>
+                </div>
+                
+                <div class="tool-category">
+                    <div class="category-title">📡 NETWORK TOOLS</div>
+                    <button class="tool-btn" onclick="runTool(13)">13. IP Information</button>
+                    <button class="tool-btn" onclick="runTool(14)">14. GeoIP Lookup</button>
+                    <button class="tool-btn" onclick="runTool(15)">15. Ping Test</button>
+                    <button class="tool-btn" onclick="runTool(16)">16. Traceroute</button>
+                    <button class="tool-btn" onclick="runTool(17)">17. Website Info</button>
+                </div>
+                
+                <div class="tool-category">
+                    <div class="category-title">🔐 SECURITY</div>
+                    <button class="tool-btn" onclick="runTool(18)">18. Password Check</button>
+                    <button class="tool-btn" onclick="runTool(19)">19. Encryption Tool</button>
+                    <button class="tool-btn" onclick="runTool(20)">20. Backup Finder</button>
+                    <button class="tool-btn" onclick="runTool(21)">21. CMS Detector</button>
+                    <button class="tool-btn" onclick="runTool(22)">22. Email Validator</button>
+                </div>
+                
+                <div class="tool-category">
+                    <div class="category-title">⚙️ UTILITIES</div>
+                    <button class="tool-btn" onclick="runTool('help')">Help & Commands</button>
+                    <button class="tool-btn" onclick="clearTerminal()">Clear Terminal</button>
+                    <button class="tool-btn" onclick="runTool('about')">About</button>
+                    <button class="tool-btn" onclick="runTool('sysinfo')">System Info</button>
+                </div>
             </div>
             
             <div class="status-bar">
-                <div id="connection-status">🟢 Connected</div>
+                <div id="connection-status">🟢 Online</div>
                 <div id="tool-status">Ready</div>
+                <div id="time">{{ timestamp }}</div>
             </div>
         </div>
         
+        <!-- Main Content -->
         <div class="main-content">
             <div class="terminal-header">
-                <div class="header-title">
-                    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
-                    █░▄▄▀█░▄▄▀█░▄▄█░▄▄▀█░▄▄▀█▀▄▄▀█░▄▄█░▄▄▀█░▄▄
-                    █░▀▀░█░▀▀▄█░▄▄█░██░█░▀▀░██░███░▄▄█░██░█▄▄▀
-                    █▄██▄█▄█▄▄█▄▄▄█▄██▄█▄██▄███▄██▄▄▄█▄██▄█▄▄▄
-                    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                <div class="header-text">
+                    ██╗ █████╗  ██████╗ ██╗   ██╗ █████╗ ██████╗     ██████╗███████╗
+                    ██║██╔══██╗██╔════╝██║   ██║██╔══██╗██╔══██╗   ██╔════╝██╔════╝
+                    ██║███████║██║     ██║   ██║███████║██████╔╝   ██║     █████╗  
+               ██   ██║██╔══██║██║     ██║   ██║██╔══██║██╔══██╗   ██║     ██╔══╝  
+               ╚█████╔╝██║  ██║╚██████╗╚██████╔╝██║  ██║██║  ██║██╗╚██████╗███████╗
+                ╚════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝ ╚═════╝╚══════╝
                 </div>
-                <div class="header-subtitle">JAGUAR 45 CYBER KIT v2.0 | REAL WORKING TOOLS | AUTHORIZED USE ONLY</div>
             </div>
             
             <div class="terminal-body" id="terminal-output">
                 <div class="output-line success">╔══════════════════════════════════════════════════════════╗</div>
-                <div class="output-line success">║      JAGUAR 45 CYBER KIT v2.0 - REAL WORKING EDITION     ║</div>
+                <div class="output-line success">║      JAGUAR 45 CYBER KIT v2.1 - RENDER COMPATIBLE       ║</div>
                 <div class="output-line success">║      Developed by Charlie Syllas and Jaguar 45           ║</div>
-                <div class="output-line success">║      Year: 2026 | All tools are fully functional        ║</div>
-                <div class="output-line success">║                                                     ║</div>
-                <div class="output-line info">System initialized at {{ timestamp }}</div>
-                <div class="output-line warning">⚠️  WARNING: For authorized security testing only!</div>
+                <div class="output-line success">║      Year: 2026 | All tools fully functional            ║</div>
+                <div class="output-line">                                                        </div>
+                <div class="output-line info">System initialized successfully</div>
+                <div class="output-line warning">⚠️  WARNING: For authorized testing only!</div>
                 <div class="output-line info">Select a tool from sidebar or type commands below</div>
+                <div class="output-line dim">Type 'help' for available commands</div>
                 <div class="output-line success">╚══════════════════════════════════════════════════════════╝</div>
             </div>
             
             <div class="input-area">
                 <div class="input-group">
                     <div class="prompt">root@jaguar45:~#</div>
-                    <input type="text" class="cmd-input" id="commandInput" 
-                           placeholder="Type command or tool number (help for list)" 
+                    <input type="text" id="commandInput" 
+                           placeholder="Type command or tool number (1-22)"
                            autocomplete="off"
-                           onkeypress="handleKeyPress(event)">
+                           autofocus>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
+        // DOM Elements
         const terminalOutput = document.getElementById('terminal-output');
         const commandInput = document.getElementById('commandInput');
         const toolStatus = document.getElementById('tool-status');
+        const timeElement = document.getElementById('time');
         
+        // Update time every second
+        function updateTime() {
+            const now = new Date();
+            timeElement.textContent = now.toLocaleTimeString();
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+        
+        // Append output to terminal
         function appendOutput(text, className = '') {
             const line = document.createElement('div');
             line.className = `output-line ${className}`;
@@ -390,13 +449,14 @@ HTML_TEMPLATE = '''
             terminalOutput.scrollTop = terminalOutput.scrollHeight;
         }
         
-        function appendResult(title, content, isTable = false) {
+        // Display result in a formatted box
+        function displayResult(title, content, isTable = false) {
             const resultDiv = document.createElement('div');
             resultDiv.className = 'result-box';
             
             const titleEl = document.createElement('div');
-            titleEl.className = 'info';
-            titleEl.textContent = `📊 ${title}`;
+            titleEl.className = 'result-title';
+            titleEl.textContent = title;
             resultDiv.appendChild(titleEl);
             
             if (isTable && Array.isArray(content)) {
@@ -404,34 +464,36 @@ HTML_TEMPLATE = '''
                 table.className = 'table';
                 
                 // Create header
-                const thead = document.createElement('thead');
-                const headerRow = document.createElement('tr');
-                Object.keys(content[0]).forEach(key => {
-                    const th = document.createElement('th');
-                    th.textContent = key;
-                    headerRow.appendChild(th);
-                });
-                thead.appendChild(headerRow);
-                table.appendChild(thead);
-                
-                // Create body
-                const tbody = document.createElement('tbody');
-                content.forEach(row => {
-                    const tr = document.createElement('tr');
-                    Object.values(row).forEach(value => {
-                        const td = document.createElement('td');
-                        td.textContent = value;
-                        tr.appendChild(td);
+                if (content.length > 0) {
+                    const thead = document.createElement('thead');
+                    const headerRow = document.createElement('tr');
+                    Object.keys(content[0]).forEach(key => {
+                        const th = document.createElement('th');
+                        th.textContent = key;
+                        headerRow.appendChild(th);
                     });
-                    tbody.appendChild(tr);
-                });
-                table.appendChild(tbody);
+                    thead.appendChild(headerRow);
+                    table.appendChild(thead);
+                    
+                    // Create body
+                    const tbody = document.createElement('tbody');
+                    content.forEach(row => {
+                        const tr = document.createElement('tr');
+                        Object.values(row).forEach(value => {
+                            const td = document.createElement('td');
+                            td.textContent = value;
+                            tr.appendChild(td);
+                        });
+                        tbody.appendChild(tr);
+                    });
+                    table.appendChild(tbody);
+                }
                 resultDiv.appendChild(table);
             } else if (Array.isArray(content)) {
-                content.forEach(line => {
+                content.forEach(item => {
                     const p = document.createElement('div');
-                    p.textContent = line;
-                    p.style.margin = '5px 0';
+                    p.textContent = item;
+                    p.style.margin = '3px 0';
                     resultDiv.appendChild(p);
                 });
             } else {
@@ -445,46 +507,132 @@ HTML_TEMPLATE = '''
             terminalOutput.scrollTop = terminalOutput.scrollHeight;
         }
         
-        function runTool(toolName) {
-            // Remove active class from all buttons
+        // Run tool by number
+        function runTool(toolNumber) {
+            // Highlight active button
             document.querySelectorAll('.tool-btn').forEach(btn => {
                 btn.classList.remove('active');
             });
-            // Add active class to clicked button
             event.target.classList.add('active');
             
-            toolStatus.textContent = `Running ${toolName.replace('_', ' ')}...`;
-            appendOutput(`> Running ${toolName.replace('_', ' ').toUpperCase()} tool`, 'highlight');
+            toolStatus.textContent = `Running tool ${toolNumber}...`;
             
-            const params = {};
-            switch(toolName) {
-                case 'port_scan':
-                    params.target = prompt("Enter target IP or domain:");
+            let toolName = '';
+            let params = {};
+            
+            switch(toolNumber) {
+                case 1:
+                    toolName = 'port_scan';
+                    params.target = prompt("Enter target (IP or domain):");
                     params.range = prompt("Port range (common/top100/1-1000):", "common");
                     break;
-                case 'dir_scan':
-                    params.url = prompt("Enter target URL:");
-                    params.wordlist = prompt("Wordlist (leave empty for default):");
+                case 2:
+                    toolName = 'dir_scan';
+                    params.url = prompt("Enter website URL:");
                     break;
-                case 'sqli':
-                    params.url = prompt("Enter target URL with parameters:");
+                case 3:
+                    toolName = 'subdomain';
+                    params.domain = prompt("Enter domain (e.g., example.com):");
                     break;
-                case 'dos_test':
-                    params.target = prompt("Enter target URL:");
-                    params.duration = prompt("Duration in seconds (max 30):", "10");
-                    params.threads = prompt("Number of threads (max 50):", "10");
+                case 4:
+                    toolName = 'whois';
+                    params.domain = prompt("Enter domain:");
                     break;
-                case 'bruteforce':
+                case 5:
+                    toolName = 'dns';
+                    params.domain = prompt("Enter domain:");
+                    break;
+                case 6:
+                    toolName = 'headers';
+                    params.url = prompt("Enter URL:");
+                    break;
+                case 7:
+                    toolName = 'ssl';
+                    params.domain = prompt("Enter domain:");
+                    break;
+                case 8:
+                    toolName = 'dos';
+                    params.target = prompt("Enter target URL (YOUR SERVER ONLY):");
+                    params.duration = prompt("Duration (seconds, max 30):", "10");
+                    break;
+                case 9:
+                    toolName = 'password_test';
                     params.url = prompt("Login URL:");
                     params.username = prompt("Username:");
-                    params.wordlist = prompt("Password list (comma separated):");
+                    params.password = prompt("Test password:");
                     break;
-                default:
-                    const input = prompt(`Enter parameter for ${toolName}:`);
-                    if (input) params.input = input;
+                case 10:
+                    toolName = 'sqli';
+                    params.url = prompt("Enter URL with parameters:");
+                    break;
+                case 11:
+                    toolName = 'xss';
+                    params.url = prompt("Enter URL:");
+                    break;
+                case 12:
+                    toolName = 'hash';
+                    params.hash = prompt("Enter hash to crack:");
+                    break;
+                case 13:
+                    toolName = 'ip_info';
+                    params.ip = prompt("Enter IP address:");
+                    break;
+                case 14:
+                    toolName = 'geoip';
+                    params.ip = prompt("Enter IP address:");
+                    break;
+                case 15:
+                    toolName = 'ping';
+                    params.host = prompt("Enter host:");
+                    break;
+                case 16:
+                    toolName = 'traceroute';
+                    params.host = prompt("Enter host:");
+                    break;
+                case 17:
+                    toolName = 'website_info';
+                    params.url = prompt("Enter website URL:");
+                    break;
+                case 18:
+                    toolName = 'password_check';
+                    params.password = prompt("Enter password to check:");
+                    break;
+                case 19:
+                    toolName = 'encrypt';
+                    params.text = prompt("Enter text:");
+                    params.action = prompt("Action (encrypt/decrypt):", "encrypt");
+                    break;
+                case 20:
+                    toolName = 'backup_finder';
+                    params.url = prompt("Enter website URL:");
+                    break;
+                case 21:
+                    toolName = 'cms_detector';
+                    params.url = prompt("Enter website URL:");
+                    break;
+                case 22:
+                    toolName = 'email_validator';
+                    params.email = prompt("Enter email address:");
+                    break;
+                case 'help':
+                    toolName = 'help';
+                    break;
+                case 'about':
+                    toolName = 'about';
+                    break;
+                case 'sysinfo':
+                    toolName = 'sysinfo';
+                    break;
             }
             
-            fetch('/api/run_tool', {
+            if (!toolName) {
+                toolStatus.textContent = 'Invalid tool';
+                return;
+            }
+            
+            appendOutput(`> Running ${toolName.replace('_', ' ').toUpperCase()}...`, 'highlight');
+            
+            fetch('/api/tool', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -497,15 +645,16 @@ HTML_TEMPLATE = '''
             .then(response => response.json())
             .then(data => {
                 toolStatus.textContent = 'Ready';
+                
                 if (data.error) {
                     appendOutput(`Error: ${data.error}`, 'error');
                 } else if (data.result) {
                     if (data.result.table) {
-                        appendResult(data.result.title, data.result.table, true);
+                        displayResult(data.result.title, data.result.table, true);
                     } else if (data.result.list) {
-                        appendResult(data.result.title, data.result.list);
-                    } else {
-                        appendOutput(data.result, 'success');
+                        displayResult(data.result.title, data.result.list);
+                    } else if (data.result.text) {
+                        appendOutput(data.result.text, data.result.type || 'info');
                     }
                 }
             })
@@ -515,25 +664,33 @@ HTML_TEMPLATE = '''
             });
         }
         
-        function handleKeyPress(e) {
+        // Handle command input
+        commandInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
-                const cmd = commandInput.value.trim();
+                const cmd = this.value.trim();
                 if (!cmd) return;
                 
                 appendOutput(`root@jaguar45:~# ${cmd}`, 'dim');
-                commandInput.value = '';
+                this.value = '';
                 
-                // Handle built-in commands
                 if (cmd === 'clear') {
-                    terminalOutput.innerHTML = '';
-                    return;
-                }
-                if (cmd === 'exit') {
-                    appendOutput('System shutdown initiated...', 'warning');
+                    clearTerminal();
                     return;
                 }
                 
-                // Send command to server
+                if (cmd === 'help' || cmd === 'about' || cmd === 'sysinfo') {
+                    runTool(cmd);
+                    return;
+                }
+                
+                // Check if it's a number (tool)
+                const toolNum = parseInt(cmd);
+                if (!isNaN(toolNum) && toolNum >= 1 && toolNum <= 22) {
+                    runTool(toolNum);
+                    return;
+                }
+                
+                // Send as general command
                 fetch('/api/command', {
                     method: 'POST',
                     headers: {
@@ -548,621 +705,395 @@ HTML_TEMPLATE = '''
                     }
                 });
             }
-        }
+        });
         
+        // Clear terminal
         function clearTerminal() {
             terminalOutput.innerHTML = '';
-            appendOutput('Terminal cleared. System ready.', 'info');
+            appendOutput('Terminal cleared. Ready for commands.', 'info');
         }
         
-        // Focus input on page load
+        // Initialize
         window.onload = function() {
             commandInput.focus();
         };
     </script>
 </body>
-</html>
-'''
+</html>'''
 
 # ========== REAL WORKING TOOLS ==========
 
-class PortScannerPro:
-    def scan(self, target, port_range="common", timeout=1):
-        """Real port scanner with threading"""
-        open_ports = []
-        
-        def check_port(port):
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(timeout)
-                result = sock.connect_ex((target, port))
-                sock.close()
-                if result == 0:
-                    service = self.get_service_name(port)
-                    banner = self.get_banner(target, port)
-                    open_ports.append({
-                        "port": port,
-                        "service": service,
-                        "banner": banner,
-                        "state": "OPEN"
-                    })
-            except:
-                pass
-        
-        if port_range == "common":
-            ports = [20, 21, 22, 23, 25, 53, 67, 68, 69, 80, 110, 111, 123, 135, 
-                    139, 143, 161, 162, 389, 443, 445, 465, 514, 587, 636, 993, 
-                    995, 1080, 1433, 1521, 1723, 2049, 2082, 2083, 2086, 2087, 
-                    2095, 2096, 2222, 2375, 2376, 3000, 3306, 3389, 5432, 5900, 
-                    5984, 6379, 8080, 8081, 8443, 8888, 9000, 9090, 9200, 9300, 
-                    11211, 27017, 27018]
-        elif port_range == "top100":
-            ports = list(range(1, 101))
-        elif "-" in str(port_range):
-            start, end = map(int, port_range.split("-"))
-            ports = list(range(start, end + 1))
-        else:
-            ports = [int(port_range)]
-        
-        with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-            executor.map(check_port, ports)
-        
-        return open_ports
+class PortScanner:
+    def scan(self, target, port_range="common"):
+        """Real port scanner"""
+        try:
+            # Resolve hostname to IP
+            ip = socket.gethostbyname(target)
+            open_ports = []
+            
+            def check_port(port):
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(1)
+                    result = sock.connect_ex((ip, port))
+                    if result == 0:
+                        try:
+                            sock.send(b'HEAD / HTTP/1.0\r\n\r\n')
+                            banner = sock.recv(1024).decode('utf-8', errors='ignore').strip()[:100]
+                        except:
+                            banner = "No banner"
+                        open_ports.append({
+                            "Port": port,
+                            "Service": self.get_service_name(port),
+                            "Status": "OPEN",
+                            "Banner": banner
+                        })
+                    sock.close()
+                except:
+                    pass
+            
+            # Determine ports
+            if port_range == "common":
+                ports = [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 993, 995, 3306, 3389, 5432, 5900, 8080, 8443]
+            elif port_range == "top100":
+                ports = list(range(1, 101))
+            elif "-" in port_range:
+                start, end = map(int, port_range.split("-"))
+                ports = list(range(start, end + 1))
+            else:
+                ports = [int(port_range)]
+            
+            # Threaded scan
+            with ThreadPoolExecutor(max_workers=min(MAX_THREADS, len(ports))) as executor:
+                executor.map(check_port, ports)
+            
+            return sorted(open_ports, key=lambda x: x["Port"])
+            
+        except socket.gaierror:
+            return [{"Error": f"Cannot resolve hostname: {target}"}]
+        except Exception as e:
+            return [{"Error": str(e)}]
     
     def get_service_name(self, port):
         services = {
-            20: "FTP Data", 21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP",
-            53: "DNS", 80: "HTTP", 110: "POP3", 123: "NTP", 135: "MS RPC",
-            139: "NetBIOS", 143: "IMAP", 161: "SNMP", 443: "HTTPS",
-            445: "SMB", 465: "SMTPS", 587: "SMTP SSL", 993: "IMAPS",
-            995: "POP3S", 1433: "MSSQL", 1521: "Oracle", 1723: "PPTP",
-            2049: "NFS", 3306: "MySQL", 3389: "RDP", 5432: "PostgreSQL",
-            5900: "VNC", 5984: "CouchDB", 6379: "Redis", 8080: "HTTP Proxy",
-            8443: "HTTPS Alt", 8888: "HTTP Alt", 9000: "PHP-FPM",
-            11211: "Memcached", 27017: "MongoDB"
+            21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS",
+            80: "HTTP", 110: "POP3", 143: "IMAP", 443: "HTTPS", 445: "SMB",
+            993: "IMAPS", 995: "POP3S", 3306: "MySQL", 3389: "RDP",
+            5432: "PostgreSQL", 5900: "VNC", 8080: "HTTP Proxy", 8443: "HTTPS Alt"
         }
         return services.get(port, "Unknown")
-    
-    def get_banner(self, host, port):
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)
-            sock.connect((host, port))
-            sock.send(b'HEAD / HTTP/1.0\r\n\r\n')
-            banner = sock.recv(1024).decode('utf-8', errors='ignore').strip()
-            sock.close()
-            return banner[:100] if banner else "No banner"
-        except:
-            return "No banner"
 
 class DirectoryScanner:
     def __init__(self):
-        self.common_dirs = [
-            "admin", "administrator", "login", "dashboard", "panel", "wp-admin",
-            "wp-login.php", "admin.php", "administrator.php", "backend", "cgi-bin",
-            "api", "api/v1", "api/v2", "rest", "graphql", "test", "testing", "dev",
-            "development", "staging", "backup", "backups", "backup.zip", "backup.tar",
-            "backup.sql", "backup.rar", "old", "archive", "config", "configuration",
-            "config.php", "config.inc.php", "settings.php", ".env", "env", "env.php",
-            "database", "db", "dbadmin", "phpmyadmin", "myadmin", "pma", "mysql",
-            "sql", "webadmin", "server-status", "server-info", "logs", "log",
-            "error_log", "access_log", "robots.txt", "sitemap.xml", ".git", ".svn",
-            ".hg", ".DS_Store", "thumbs.db", "composer.json", "package.json",
-            "README.md", "LICENSE", "CHANGELOG", ".htaccess", ".htpasswd",
-            "phpinfo.php", "test.php", "info.php", "debug.php"
+        self.common_paths = [
+            "admin", "administrator", "login", "dashboard", "wp-admin",
+            "wp-login.php", "admin.php", "backend", "cgi-bin", "api",
+            "test", "backup", "backup.zip", "backup.sql", "config",
+            "config.php", ".env", "env", ".git", "robots.txt",
+            "sitemap.xml", "phpinfo.php", "info.php", ".htaccess",
+            "server-status", "server-info", "logs", "error_log"
         ]
     
-    def scan(self, url, custom_wordlist=None):
-        discovered = []
-        
-        if not url.startswith(('http://', 'https://')):
-            url = 'http://' + url
-        
-        base_url = url.rstrip('/')
-        
-        # Add custom wordlist entries
-        wordlist = self.common_dirs.copy()
-        if custom_wordlist:
-            if os.path.exists(custom_wordlist):
-                with open(custom_wordlist, 'r') as f:
-                    wordlist.extend([line.strip() for line in f if line.strip()])
-            else:
-                # Treat as comma-separated list
-                wordlist.extend([x.strip() for x in custom_wordlist.split(',')])
-        
-        for path in wordlist:
-            for suffix in ['', '/']:
-                test_url = f"{base_url}/{path}{suffix}"
+    def scan(self, url):
+        """Find hidden directories"""
+        try:
+            if not url.startswith(('http://', 'https://')):
+                url = 'http://' + url
+            
+            base_url = url.rstrip('/')
+            results = []
+            
+            for path in self.common_paths:
+                test_url = f"{base_url}/{path}"
                 try:
-                    response = requests.get(test_url, timeout=3, verify=False, 
-                                          headers={'User-Agent': USER_AGENT})
-                    
+                    response = requests.get(test_url, timeout=2, verify=False)
                     if response.status_code < 400:
-                        content_length = len(response.content)
                         title = self.extract_title(response.text)
-                        
-                        discovered.append({
+                        results.append({
                             "URL": test_url,
                             "Status": response.status_code,
-                            "Size": f"{content_length} bytes",
+                            "Size": f"{len(response.content)} bytes",
                             "Title": title[:50] if title else "N/A"
                         })
-                        
                 except:
                     continue
-        
-        return discovered
+            
+            return results if results else [{"Status": "No accessible paths found"}]
+            
+        except Exception as e:
+            return [{"Error": str(e)}]
     
     def extract_title(self, html):
         match = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE)
         return match.group(1) if match else None
 
 class SQLInjectionScanner:
-    def __init__(self):
-        self.payloads = [
-            "'",
-            "''",
-            "`",
-            "\"",
-            "' OR '1'='1",
-            "' OR '1'='1' --",
-            "' OR '1'='1' /*",
-            "' UNION SELECT NULL--",
-            "' UNION SELECT NULL,NULL--",
-            "' UNION SELECT NULL,NULL,NULL--",
-            "1' ORDER BY 1--",
-            "1' ORDER BY 1000--",
-            "1' AND 1=1--",
-            "1' AND 1=2--",
-            "1' AND SLEEP(5)--",
-            "1' AND 1=1 UNION SELECT 1,2,3--",
-            "../../../etc/passwd",
-            "..\\..\\..\\windows\\win.ini",
-            "<script>alert('XSS')</script>",
-            "\" onmouseover=\"alert('XSS')",
-            "javascript:alert('XSS')",
-            "<img src=x onerror=alert('XSS')>",
-            "' OR EXISTS(SELECT * FROM users)--",
-            "admin' --",
-            "admin' #",
-            "admin'/*",
-            "' OR 1=1 LIMIT 1 --",
-            "' OR 1=1 LIMIT 1,1 --"
-        ]
-    
     def scan(self, url):
-        vulnerabilities = []
-        
-        parsed = urlparse(url)
-        if not parsed.query:
-            return [{"type": "Error", "message": "No query parameters found"}]
-        
-        params = parsed.query.split('&')
-        
-        for param in params:
-            if '=' in param:
-                key, original_value = param.split('=', 1)
+        """Test for SQL injection vulnerabilities"""
+        try:
+            if not url.startswith(('http://', 'https://')):
+                url = 'http://' + url
+            
+            # Test payloads
+            payloads = [
+                "'",
+                "' OR '1'='1",
+                "' OR '1'='1' --",
+                "' UNION SELECT NULL--",
+                "1' AND '1'='1",
+                "1' AND '1'='2"
+            ]
+            
+            vulnerabilities = []
+            
+            # Parse URL parameters
+            parsed = urlparse(url)
+            if '?' in url:
+                base_url = url.split('?')[0]
+                params = url.split('?')[1]
                 
-                for payload in self.payloads:
-                    # Test SQL Injection
-                    test_value = original_value + payload
-                    test_url = url.replace(f"{key}={original_value}", f"{key}={test_value}")
-                    
-                    try:
-                        response = requests.get(test_url, timeout=5, verify=False,
-                                              headers={'User-Agent': USER_AGENT})
-                        
-                        # Check for SQL errors
-                        sql_errors = [
-                            'sql', 'mysql', 'postgresql', 'oracle', 'database',
-                            'syntax', 'error', 'warning', 'unclosed', 'quote',
-                            'union', 'select', 'insert', 'update', 'delete',
-                            'you have an error', 'unexpected token'
-                        ]
-                        
-                        response_text = response.text.lower()
-                        
-                        if any(error in response_text for error in sql_errors):
-                            vulnerabilities.append({
-                                "Parameter": key,
-                                "Payload": payload,
-                                "Type": "SQL Injection",
-                                "Evidence": "SQL error in response"
-                            })
-                            break
+                param_dict = {}
+                for param in params.split('&'):
+                    if '=' in param:
+                        key, value = param.split('=', 1)
+                        param_dict[key] = value
+                
+                # Test each parameter
+                for key, value in param_dict.items():
+                    for payload in payloads:
+                        test_value = value + payload
+                        test_url = f"{base_url}?{key}={test_value}"
+                        try:
+                            response = requests.get(test_url, timeout=3, verify=False)
+                            response_text = response.text.lower()
                             
-                        # Check for time-based SQLi
-                        if 'SLEEP(' in payload.upper() or 'WAITFOR' in payload.upper():
-                            start_time = time.time()
-                            requests.get(test_url, timeout=10, verify=False)
-                            elapsed = time.time() - start_time
-                            if elapsed > 4:
+                            # Check for SQL errors
+                            sql_indicators = ['sql', 'mysql', 'database', 'syntax', 'error']
+                            if any(indicator in response_text for indicator in sql_indicators):
                                 vulnerabilities.append({
                                     "Parameter": key,
                                     "Payload": payload,
-                                    "Type": "Time-based SQL Injection",
-                                    "Evidence": f"Delayed response ({elapsed:.2f}s)"
+                                    "Type": "SQL Injection",
+                                    "Status": "VULNERABLE"
                                 })
                                 break
-                    
-                    except requests.exceptions.Timeout:
-                        vulnerabilities.append({
-                            "Parameter": key,
-                            "Payload": payload,
-                            "Type": "Time-based SQL Injection",
-                            "Evidence": "Request timeout"
-                        })
-                        break
-                    except:
-                        continue
-        
-        return vulnerabilities if vulnerabilities else [{"type": "Info", "message": "No SQL injection vulnerabilities detected"}]
+                        except:
+                            continue
+            
+            return vulnerabilities if vulnerabilities else [{"Status": "No SQL injection vulnerabilities detected"}]
+            
+        except Exception as e:
+            return [{"Error": str(e)}]
 
 class DoSTester:
-    """Real DoS stress testing tool for your own servers"""
+    """Real DoS testing for YOUR OWN servers"""
     
-    def __init__(self):
-        self.active_attacks = {}
-    
-    def start_test(self, target_url, duration=10, threads=10):
-        """Start a real stress test"""
-        attack_id = str(time.time())
-        self.active_attacks[attack_id] = {
-            'running': True,
-            'start_time': time.time(),
-            'requests_sent': 0,
-            'errors': 0
-        }
-        
-        def attack_worker(worker_id):
+    def test(self, target, duration=10):
+        """Stress test a server"""
+        try:
+            if not target.startswith(('http://', 'https://')):
+                target = 'http://' + target
+            
+            # Safety limit
+            if duration > 30:
+                duration = 30
+            
             requests_sent = 0
             errors = 0
+            start_time = time.time()
             
-            while (time.time() - self.active_attacks[attack_id]['start_time'] < duration and 
-                   self.active_attacks[attack_id]['running']):
+            # Create session for connection reuse
+            session = requests.Session()
+            
+            while time.time() - start_time < duration:
                 try:
-                    # Use different HTTP methods
-                    methods = ['GET', 'POST', 'HEAD']
-                    method = random.choice(methods)
-                    
-                    headers = {
-                        'User-Agent': USER_AGENT,
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                        'Accept-Language': 'en-US,en;q=0.5',
-                        'Accept-Encoding': 'gzip, deflate',
-                        'Connection': 'keep-alive',
-                        'Cache-Control': 'no-cache'
-                    }
-                    
-                    if method == 'GET':
-                        requests.get(target_url, timeout=2, headers=headers, verify=False)
-                    elif method == 'POST':
-                        data = {'test': 'data', 'random': random.randint(1, 1000000)}
-                        requests.post(target_url, data=data, timeout=2, headers=headers, verify=False)
-                    else:
-                        requests.head(target_url, timeout=2, headers=headers, verify=False)
-                    
+                    response = session.get(target, timeout=2, verify=False)
                     requests_sent += 1
-                    time.sleep(0.01)  # Small delay to avoid overwhelming
+                    
+                    # Small delay to avoid overwhelming
+                    time.sleep(0.01)
                     
                 except:
                     errors += 1
-                    time.sleep(0.1)
+                
+            elapsed = time.time() - start_time
             
-            return requests_sent, errors
-        
-        # Start threads
-        results = []
-        with ThreadPoolExecutor(max_workers=threads) as executor:
-            futures = [executor.submit(attack_worker, i) for i in range(threads)]
-            for future in as_completed(futures):
-                reqs, errs = future.result()
-                results.append((reqs, errs))
-        
-        total_requests = sum(r[0] for r in results)
-        total_errors = sum(r[1] for r in results)
-        
-        # Clean up
-        del self.active_attacks[attack_id]
-        
-        return {
-            'target': target_url,
-            'duration': duration,
-            'threads': threads,
-            'total_requests': total_requests,
-            'requests_per_second': total_requests / duration if duration > 0 else 0,
-            'errors': total_errors,
-            'success_rate': ((total_requests - total_errors) / total_requests * 100) if total_requests > 0 else 0
-        }
-    
-    def stop_all(self):
-        for attack_id in list(self.active_attacks.keys()):
-            self.active_attacks[attack_id]['running'] = False
-        return len(self.active_attacks)
-
-class BruteforceTester:
-    """Real password brute force testing for your own systems"""
-    
-    def test_login(self, url, username, password_list, method='POST', param_user='username', param_pass='password'):
-        """Test login credentials"""
-        results = []
-        
-        if isinstance(password_list, str):
-            if ',' in password_list:
-                passwords = [p.strip() for p in password_list.split(',')]
-            elif os.path.exists(password_list):
-                with open(password_list, 'r') as f:
-                    passwords = [line.strip() for line in f if line.strip()]
-            else:
-                passwords = [password_list]
-        else:
-            passwords = password_list
-        
-        for password in passwords:
-            try:
-                if method.upper() == 'POST':
-                    data = {param_user: username, param_pass: password}
-                    response = requests.post(url, data=data, timeout=5, verify=False,
-                                           headers={'User-Agent': USER_AGENT})
-                else:
-                    # GET request with parameters
-                    response = requests.get(f"{url}?{param_user}={username}&{param_pass}={password}", 
-                                          timeout=5, verify=False, headers={'User-Agent': USER_AGENT})
-                
-                # Analyze response
-                status = response.status_code
-                success = False
-                
-                # Common success indicators
-                success_indicators = [
-                    'welcome', 'dashboard', 'logout', 'success', 'logged in',
-                    'my account', 'profile', 'home page'
-                ]
-                
-                if any(indicator in response.text.lower() for indicator in success_indicators):
-                    success = True
-                elif 'login' not in response.text.lower() and 'password' not in response.text.lower():
-                    success = True
-                elif status in [301, 302]:  # Redirect often means success
-                    success = True
-                
-                results.append({
-                    'username': username,
-                    'password': password,
-                    'status': status,
-                    'success': success,
-                    'length': len(response.text)
-                })
-                
-                if success:
-                    break  # Stop on first success
-                    
-                time.sleep(0.1)  # Small delay between attempts
-                
-            except Exception as e:
-                results.append({
-                    'username': username,
-                    'password': password,
-                    'status': 'Error',
-                    'success': False,
-                    'error': str(e)
-                })
-        
-        return results
+            return {
+                "Target": target,
+                "Duration": f"{duration}s",
+                "Actual Time": f"{elapsed:.2f}s",
+                "Requests Sent": requests_sent,
+                "Errors": errors,
+                "Requests/Second": f"{requests_sent/elapsed:.2f}",
+                "Success Rate": f"{(requests_sent/(requests_sent+errors))*100:.1f}%"
+            }
+            
+        except Exception as e:
+            return {"Error": str(e)}
 
 class HashCracker:
-    """Real hash cracking tool"""
-    
-    def __init__(self):
-        self.common_passwords = [
-            'password', '123456', '12345678', '1234', 'qwerty', '12345',
-            'dragon', 'pussy', 'baseball', 'football', 'letmein', 'monkey',
-            '696969', 'abc123', 'mustang', 'michael', 'shadow', 'master',
-            'jennifer', '111111', '2000', 'jordan', 'superman', 'harley',
-            '1234567', 'fuckme', 'hunter', 'fuckyou', 'trustno1', 'ranger',
-            'buster', 'thomas', 'tigger', 'robert', 'soccer', 'fuck', 'batman',
-            'test', 'pass', 'killer', 'hockey', 'george', 'charlie', 'andrew',
-            'michelle', 'love', 'sunshine', 'jessica', 'asshole', '6969',
-            'pepper', 'daniel', 'access', '123456789', '654321', 'joshua',
-            'maggie', 'starwars', 'silver', 'william', 'dallas', 'yankees',
-            '123123', 'ashley', '666666', 'hello', 'amanda', 'orange', 'biteme',
-            'freedom', 'computer', 'secret', 'fuckoff', 'nicole', 'ginger',
-            'matthew', 'abcd1234', 'ironman', 'hammer', 'summer', 'corvette',
-            'taylor', 'fucker', 'austin', 'merlin', 'cheese', 'metallica',
-            'nirvana', 'bulldog', 'jupiter', 'purple', 'scooter', 'please',
-            'rosebud', 'jasmine', 'matrix', 'oliver', 'princess', 'mercedes'
-        ]
-    
-    def identify_hash(self, hash_str):
-        """Identify hash type"""
-        hash_len = len(hash_str)
-        
-        if hash_len == 32 and re.match(r'^[a-f0-9]{32}$', hash_str):
-            return 'MD5'
-        elif hash_len == 40 and re.match(r'^[a-f0-9]{40}$', hash_str):
-            return 'SHA1'
-        elif hash_len == 64 and re.match(r'^[a-f0-9]{64}$', hash_str):
-            return 'SHA256'
-        elif hash_len == 56 and re.match(r'^[a-f0-9]{56}$', hash_str):
-            return 'SHA224'
-        elif hash_len == 96 and re.match(r'^[a-f0-9]{96}$', hash_str):
-            return 'SHA384'
-        elif hash_len == 128 and re.match(r'^[a-f0-9]{128}$', hash_str):
-            return 'SHA512'
-        elif hash_str.startswith('$2a$') or hash_str.startswith('$2b$') or hash_str.startswith('$2y$'):
-            return 'BCRYPT'
-        elif hash_str.startswith('$1$'):
-            return 'MD5-CRYPT'
-        elif hash_str.startswith('$5$'):
-            return 'SHA256-CRYPT'
-        elif hash_str.startswith('$6$'):
-            return 'SHA512-CRYPT'
-        else:
-            return 'UNKNOWN'
-    
-    def crack(self, hash_str, wordlist=None):
-        """Attempt to crack hash"""
-        hash_type = self.identify_hash(hash_str)
-        
-        # Prepare wordlist
-        words_to_try = self.common_passwords.copy()
-        if wordlist:
-            if os.path.exists(wordlist):
-                with open(wordlist, 'r') as f:
-                    words_to_try.extend([line.strip() for line in f if line.strip()])
-            else:
-                words_to_try.extend([w.strip() for w in wordlist.split(',')])
-        
-        # Try each password
-        for password in words_to_try:
-            hashed = None
+    def crack(self, hash_value):
+        """Attempt to crack common hashes"""
+        try:
+            # Identify hash type
+            hash_len = len(hash_value)
+            hash_type = "Unknown"
             
-            try:
-                if hash_type == 'MD5':
-                    hashed = hashlib.md5(password.encode()).hexdigest()
-                elif hash_type == 'SHA1':
-                    hashed = hashlib.sha1(password.encode()).hexdigest()
-                elif hash_type == 'SHA256':
-                    hashed = hashlib.sha256(password.encode()).hexdigest()
-                elif hash_type == 'SHA224':
-                    hashed = hashlib.sha224(password.encode()).hexdigest()
-                elif hash_type == 'SHA384':
-                    hashed = hashlib.sha384(password.encode()).hexdigest()
-                elif hash_type == 'SHA512':
-                    hashed = hashlib.sha512(password.encode()).hexdigest()
+            if hash_len == 32:
+                hash_type = "MD5"
+            elif hash_len == 40:
+                hash_type = "SHA1"
+            elif hash_len == 64:
+                hash_type = "SHA256"
+            
+            # Common passwords to try
+            common_passwords = [
+                "password", "123456", "12345678", "qwerty", "abc123",
+                "monkey", "letmein", "dragon", "111111", "baseball",
+                "iloveyou", "trustno1", "1234567", "sunshine", "master",
+                "123123", "welcome", "shadow", "ashley", "football",
+                "jesus", "michael", "ninja", "mustang", "password1"
+            ]
+            
+            for password in common_passwords:
+                hashed = None
                 
-                if hashed and hashed.lower() == hash_str.lower():
+                if hash_type == "MD5":
+                    hashed = hashlib.md5(password.encode()).hexdigest()
+                elif hash_type == "SHA1":
+                    hashed = hashlib.sha1(password.encode()).hexdigest()
+                elif hash_type == "SHA256":
+                    hashed = hashlib.sha256(password.encode()).hexdigest()
+                
+                if hashed and hashed.lower() == hash_value.lower():
                     return {
-                        'success': True,
-                        'hash_type': hash_type,
-                        'password': password,
-                        'attempts': words_to_try.index(password) + 1
+                        "Hash Type": hash_type,
+                        "Status": "CRACKED",
+                        "Password": password,
+                        "Message": "Successfully cracked!"
                     }
-            except:
-                continue
-        
-        return {
-            'success': False,
-            'hash_type': hash_type,
-            'message': 'Hash not cracked with current wordlist'
-        }
+            
+            return {
+                "Hash Type": hash_type,
+                "Status": "NOT CRACKED",
+                "Message": "Hash not found in common passwords"
+            }
+            
+        except Exception as e:
+            return {"Error": str(e)}
 
 class NetworkTools:
-    """Real network information tools"""
-    
     def ip_info(self, ip):
-        """Get detailed IP information"""
+        """Get IP address information"""
         try:
-            # Check if IP is valid
+            # Validate IP
             ip_obj = ipaddress.ip_address(ip)
             
             info = {
-                'IP Address': ip,
-                'IP Version': 'IPv4' if ip_obj.version == 4 else 'IPv6',
-                'Is Private': ip_obj.is_private,
-                'Is Multicast': ip_obj.is_multicast,
-                'Is Global': ip_obj.is_global,
-                'Is Reserved': ip_obj.is_reserved
+                "IP Address": ip,
+                "IP Version": "IPv4" if ip_obj.version == 4 else "IPv6",
+                "Is Private": str(ip_obj.is_private),
+                "Is Reserved": str(ip_obj.is_reserved),
+                "Is Loopback": str(ip_obj.is_loopback),
+                "Is Multicast": str(ip_obj.is_multicast)
             }
             
             # Try reverse DNS
             try:
                 hostname = socket.gethostbyaddr(ip)[0]
-                info['Hostname'] = hostname
+                info["Hostname"] = hostname
             except:
-                info['Hostname'] = 'Not found'
+                info["Hostname"] = "Not found"
             
-            # Try geolocation via ip-api.com
+            # Try geolocation (free API)
             try:
-                response = requests.get(f'http://ip-api.com/json/{ip}', timeout=5)
+                response = requests.get(f"http://ip-api.com/json/{ip}", timeout=5)
                 if response.status_code == 200:
-                    geo = response.json()
-                    if geo['status'] == 'success':
-                        info['Country'] = geo.get('country', 'N/A')
-                        info['Region'] = geo.get('regionName', 'N/A')
-                        info['City'] = geo.get('city', 'N/A')
-                        info['ISP'] = geo.get('isp', 'N/A')
-                        info['Organization'] = geo.get('org', 'N/A')
-                        info['ASN'] = geo.get('as', 'N/A')
-                        info['Latitude'] = geo.get('lat', 'N/A')
-                        info['Longitude'] = geo.get('lon', 'N/A')
+                    data = response.json()
+                    if data.get("status") == "success":
+                        info["Country"] = data.get("country", "N/A")
+                        info["Region"] = data.get("regionName", "N/A")
+                        info["City"] = data.get("city", "N/A")
+                        info["ISP"] = data.get("isp", "N/A")
+                        info["Organization"] = data.get("org", "N/A")
+                        info["Latitude"] = data.get("lat", "N/A")
+                        info["Longitude"] = data.get("lon", "N/A")
             except:
                 pass
-            
-            # Check open ports (top 10)
-            try:
-                open_ports = []
-                for port in [21, 22, 23, 25, 53, 80, 110, 443, 3389]:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.settimeout(1)
-                    result = sock.connect_ex((ip, port))
-                    sock.close()
-                    if result == 0:
-                        open_ports.append(port)
-                info['Open Ports (common)'] = ', '.join(map(str, open_ports)) if open_ports else 'None'
-            except:
-                info['Open Ports'] = 'Check failed'
             
             return info
             
         except ValueError:
-            return {'Error': 'Invalid IP address'}
+            return {"Error": "Invalid IP address"}
         except Exception as e:
-            return {'Error': str(e)}
+            return {"Error": str(e)}
     
-    def traceroute(self, host):
-        """Perform traceroute"""
+    def ping(self, host):
+        """Simple ping test"""
         try:
-            # For web environment, use simplified traceroute
-            import subprocess
-            result = subprocess.run(['traceroute', '-m', '15', '-w', '1', host], 
-                                  capture_output=True, text=True, timeout=30)
-            return result.stdout
-        except:
-            try:
-                # Alternative method
-                import sys
-                if sys.platform == 'win32':
-                    result = subprocess.run(['tracert', '-h', '15', '-w', '1000', host], 
-                                          capture_output=True, text=True, timeout=30)
-                else:
-                    result = subprocess.run(['traceroute', '-m', '15', host], 
-                                          capture_output=True, text=True, timeout=30)
-                return result.stdout
-            except Exception as e:
-                return f"Traceroute failed: {str(e)}"
+            # Resolve host
+            ip = socket.gethostbyname(host)
+            
+            # Try to connect to port 80 (HTTP)
+            start = time.time()
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            result = sock.connect_ex((ip, 80))
+            elapsed = (time.time() - start) * 1000  # Convert to ms
+            
+            if result == 0:
+                return {
+                    "Host": host,
+                    "IP": ip,
+                    "Status": "ONLINE",
+                    "Response Time": f"{elapsed:.2f} ms"
+                }
+            else:
+                return {
+                    "Host": host,
+                    "IP": ip,
+                    "Status": "OFFLINE",
+                    "Error": "Port 80 not responding"
+                }
+            
+        except socket.gaierror:
+            return {"Error": f"Cannot resolve host: {host}"}
+        except Exception as e:
+            return {"Error": str(e)}
 
 class SecurityTools:
-    """Real security assessment tools"""
-    
     def check_ssl(self, domain):
         """Check SSL certificate"""
         try:
+            # Remove protocol if present
+            domain = domain.replace('http://', '').replace('https://', '').split('/')[0]
+            
             context = ssl.create_default_context()
             with socket.create_connection((domain, 443), timeout=5) as sock:
                 with context.wrap_socket(sock, server_hostname=domain) as ssock:
                     cert = ssock.getpeercert()
             
-            # Parse certificate
-            issuer = dict(x[0] for x in cert['issuer'])
-            subject = dict(x[0] for x in cert['subject'])
+            # Parse dates
+            from datetime import datetime
+            not_before = datetime.strptime(cert['notBefore'], '%b %d %H:%M:%S %Y %Z')
+            not_after = datetime.strptime(cert['notAfter'], '%b %d %H:%M:%S %Y %Z')
+            days_left = (not_after - datetime.now()).days
             
-            # Check expiry
-            not_after = cert['notAfter']
-            expiry_date = datetime.strptime(not_after, '%b %d %H:%M:%S %Y %Z')
-            days_left = (expiry_date - datetime.now()).days
+            # Get issuer
+            issuer = dict(x[0] for x in cert['issuer'])
             
             return {
-                'Domain': domain,
-                'Issuer': issuer.get('organizationName', 'Unknown'),
-                'Valid From': cert['notBefore'],
-                'Valid Until': not_after,
-                'Days Left': days_left,
-                'Status': 'Valid' if days_left > 0 else 'Expired',
-                'Subject': subject.get('commonName', 'Unknown')
+                "Domain": domain,
+                "Issuer": issuer.get('organizationName', 'Unknown'),
+                "Valid From": cert['notBefore'],
+                "Valid Until": cert['notAfter'],
+                "Days Left": days_left,
+                "Status": "Valid" if days_left > 0 else "Expired",
+                "Expired": "Yes" if days_left <= 0 else "No"
             }
+            
         except Exception as e:
-            return {'Error': f'SSL check failed: {str(e)}'}
+            return {"Error": f"SSL check failed: {str(e)}"}
     
     def password_strength(self, password):
         """Check password strength"""
@@ -1171,17 +1102,15 @@ class SecurityTools:
         
         # Length
         length = len(password)
-        if length >= 16:
+        if length >= 12:
             score += 3
-            feedback.append("✓ Excellent length (16+ characters)")
-        elif length >= 12:
-            score += 2
-            feedback.append("✓ Good length (12+ characters)")
+            feedback.append("✓ Excellent length (12+ characters)")
         elif length >= 8:
-            score += 1
-            feedback.append("⚠️  Minimum length (8 characters)")
+            score += 2
+            feedback.append("✓ Good length (8+ characters)")
         else:
-            feedback.append("✗ Too short (minimum 8 characters required)")
+            score += 0
+            feedback.append("✗ Too short (min 8 characters)")
         
         # Complexity
         has_upper = any(c.isupper() for c in password)
@@ -1191,15 +1120,15 @@ class SecurityTools:
         
         if has_upper:
             score += 1
-            feedback.append("✓ Contains uppercase letters")
+            feedback.append("✓ Contains uppercase")
         else:
-            feedback.append("✗ Missing uppercase letters")
+            feedback.append("✗ Missing uppercase")
         
         if has_lower:
             score += 1
-            feedback.append("✓ Contains lowercase letters")
+            feedback.append("✓ Contains lowercase")
         else:
-            feedback.append("✗ Missing lowercase letters")
+            feedback.append("✗ Missing lowercase")
         
         if has_digit:
             score += 1
@@ -1213,11 +1142,11 @@ class SecurityTools:
         else:
             feedback.append("✗ Missing special characters")
         
-        # Common password check
+        # Common passwords
         common = ['password', '123456', 'qwerty', 'admin', 'welcome']
         if password.lower() in common:
             score = 0
-            feedback.append("✗ Extremely common password - CHANGE IMMEDIATELY!")
+            feedback.append("✗ Extremely common password!")
         
         # Determine strength
         if score >= 8:
@@ -1234,40 +1163,65 @@ class SecurityTools:
             color = "error"
         
         return {
-            'score': score,
-            'strength': strength,
-            'feedback': feedback,
-            'color': color,
-            'length': length,
-            'has_upper': has_upper,
-            'has_lower': has_lower,
-            'has_digit': has_digit,
-            'has_special': has_special
+            "Password": "*" * len(password),
+            "Strength": strength,
+            "Score": f"{score}/10",
+            "Length": length,
+            "Has Uppercase": str(has_upper),
+            "Has Lowercase": str(has_lower),
+            "Has Numbers": str(has_digit),
+            "Has Special": str(has_special),
+            "Feedback": "\n".join(feedback)
         }
 
+class EncryptionTool:
+    def process(self, text, action="encrypt"):
+        """Simple encryption/decryption"""
+        try:
+            if action == "encrypt":
+                # Simple base64 encoding
+                encoded = base64.b64encode(text.encode()).decode()
+                return {
+                    "Action": "Encrypt",
+                    "Original": text,
+                    "Result": encoded,
+                    "Method": "Base64"
+                }
+            else:
+                # Base64 decoding
+                decoded = base64.b64decode(text.encode()).decode()
+                return {
+                    "Action": "Decrypt",
+                    "Original": text,
+                    "Result": decoded,
+                    "Method": "Base64"
+                }
+        except:
+            return {"Error": "Invalid input or action"}
+
 # ========== TOOL INSTANCES ==========
-port_scanner = PortScannerPro()
+port_scanner = PortScanner()
 dir_scanner = DirectoryScanner()
 sql_scanner = SQLInjectionScanner()
 dos_tester = DoSTester()
-bruteforce = BruteforceTester()
 hash_cracker = HashCracker()
 network_tools = NetworkTools()
 security_tools = SecurityTools()
+encryption_tool = EncryptionTool()
 
 # ========== FLASK ROUTES ==========
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE, timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    return render_template_string(HTML_TEMPLATE, timestamp=datetime.now().strftime("%H:%M:%S"))
 
-@app.route('/api/run_tool', methods=['POST'])
+@app.route('/api/tool', methods=['POST'])
 def run_tool():
     try:
         data = request.get_json()
         tool_name = data.get('tool')
         params = data.get('params', {})
         
-        result = None
+        result = {}
         
         if tool_name == 'port_scan':
             target = params.get('target')
@@ -1275,202 +1229,229 @@ def run_tool():
             if target:
                 ports = port_scanner.scan(target, port_range)
                 result = {
-                    'title': f'Port Scan Results for {target}',
+                    'title': f'Port Scan Results: {target}',
                     'table': ports
                 }
+            else:
+                result = {'error': 'Target required'}
         
         elif tool_name == 'dir_scan':
             url = params.get('url')
-            wordlist = params.get('wordlist')
             if url:
-                dirs = dir_scanner.scan(url, wordlist)
+                dirs = dir_scanner.scan(url)
                 result = {
-                    'title': f'Directory Scan Results for {url}',
-                    'table': dirs[:50]  # Limit to 50 results
+                    'title': f'Directory Scan Results: {url}',
+                    'table': dirs[:20]  # Limit results
                 }
+            else:
+                result = {'error': 'URL required'}
         
         elif tool_name == 'sqli':
             url = params.get('url')
             if url:
                 vulns = sql_scanner.scan(url)
                 result = {
-                    'title': f'SQL Injection Scan Results for {url}',
+                    'title': f'SQL Injection Scan: {url}',
                     'table': vulns
                 }
+            else:
+                result = {'error': 'URL required'}
         
-        elif tool_name == 'dos_test':
+        elif tool_name == 'dos':
             target = params.get('target')
             duration = int(params.get('duration', 10))
-            threads = int(params.get('threads', 10))
-            
-            if duration > 30:
-                duration = 30
-            if threads > 50:
-                threads = 50
-            
             if target:
-                test_result = dos_tester.start_test(target, duration, threads)
-                result = {
-                    'title': f'DoS Stress Test Results for {target}',
-                    'list': [
-                        f"Target: {test_result['target']}",
-                        f"Duration: {test_result['duration']} seconds",
-                        f"Threads: {test_result['threads']}",
-                        f"Total Requests: {test_result['total_requests']:,}",
-                        f"Requests/Second: {test_result['requests_per_second']:.1f}",
-                        f"Errors: {test_result['errors']}",
-                        f"Success Rate: {test_result['success_rate']:.1f}%"
-                    ]
-                }
-        
-        elif tool_name == 'bruteforce':
-            url = params.get('url')
-            username = params.get('username')
-            wordlist = params.get('wordlist')
-            
-            if url and username:
-                passwords = wordlist.split(',') if wordlist else ['password', '123456', 'admin']
-                results = bruteforce.test_login(url, username, passwords)
-                result = {
-                    'title': f'Bruteforce Test Results for {url}',
-                    'table': results
-                }
-        
-        elif tool_name == 'hash_crack':
-            hash_str = params.get('input')
-            if hash_str:
-                crack_result = hash_cracker.crack(hash_str)
-                if crack_result['success']:
+                # Safety warning
+                if not target.startswith(('http://localhost', 'http://127.0.0.1', 'https://localhost')):
                     result = {
-                        'title': 'Hash Cracked Successfully!',
+                        'title': '⚠️ SECURITY WARNING',
                         'list': [
-                            f"Hash Type: {crack_result['hash_type']}",
-                            f"Password: {crack_result['password']}",
-                            f"Attempts: {crack_result['attempts']}"
+                            'DoS testing should ONLY be performed on YOUR OWN SERVERS!',
+                            'Testing other servers without permission is ILLEGAL.',
+                            '',
+                            'For testing your own server, use localhost or your internal IP.',
+                            'Example: http://localhost:3000 or http://192.168.1.100'
                         ]
                     }
                 else:
+                    dos_result = dos_tester.test(target, duration)
                     result = {
-                        'title': 'Hash Not Cracked',
-                        'list': [
-                            f"Hash Type: {crack_result['hash_type']}",
-                            f"Message: {crack_result['message']}"
-                        ]
+                        'title': f'DoS Stress Test Results',
+                        'table': [dos_result]
                     }
+            else:
+                result = {'error': 'Target required'}
+        
+        elif tool_name == 'hash':
+            hash_value = params.get('hash')
+            if hash_value:
+                crack_result = hash_cracker.crack(hash_value)
+                result = {
+                    'title': f'Hash Cracking Results',
+                    'table': [crack_result]
+                }
+            else:
+                result = {'error': 'Hash required'}
         
         elif tool_name == 'ip_info':
-            ip = params.get('input')
+            ip = params.get('ip')
             if ip:
                 info = network_tools.ip_info(ip)
-                if 'Error' in info:
-                    result = {'title': 'Error', 'list': [info['Error']]}
-                else:
-                    result = {
-                        'title': f'IP Information for {ip}',
-                        'list': [f"{k}: {v}" for k, v in info.items()]
-                    }
+                result = {
+                    'title': f'IP Information: {ip}',
+                    'table': [info]
+                }
+            else:
+                result = {'error': 'IP address required'}
         
-        elif tool_name == 'ssl_scan':
-            domain = params.get('input')
+        elif tool_name == 'ssl':
+            domain = params.get('domain')
             if domain:
                 ssl_info = security_tools.check_ssl(domain)
                 result = {
-                    'title': f'SSL Certificate Info for {domain}',
-                    'list': [f"{k}: {v}" for k, v in ssl_info.items()]
+                    'title': f'SSL Certificate: {domain}',
+                    'table': [ssl_info]
                 }
+            else:
+                result = {'error': 'Domain required'}
         
-        elif tool_name == 'pwd_check':
-            password = params.get('input')
+        elif tool_name == 'password_check':
+            password = params.get('password')
             if password:
                 strength = security_tools.password_strength(password)
                 result = {
-                    'title': f'Password Strength Analysis',
-                    'list': [
-                        f"Strength: {strength['strength']}",
-                        f"Score: {strength['score']}/10",
-                        f"Length: {strength['length']} characters",
-                        "",
-                        "Details:"
-                    ] + strength['feedback']
+                    'title': 'Password Strength Analysis',
+                    'table': [strength]
                 }
+            else:
+                result = {'error': 'Password required'}
+        
+        elif tool_name == 'encrypt':
+            text = params.get('text')
+            action = params.get('action', 'encrypt')
+            if text:
+                encrypted = encryption_tool.process(text, action)
+                result = {
+                    'title': f'{action.title()} Result',
+                    'table': [encrypted]
+                }
+            else:
+                result = {'error': 'Text required'}
+        
+        elif tool_name == 'ping':
+            host = params.get('host')
+            if host:
+                ping_result = network_tools.ping(host)
+                result = {
+                    'title': f'Ping Test: {host}',
+                    'table': [ping_result]
+                }
+            else:
+                result = {'error': 'Host required'}
+        
+        elif tool_name == 'whois':
+            domain = params.get('domain')
+            if domain:
+                try:
+                    w = whois.whois(domain)
+                    info = {
+                        "Domain": domain,
+                        "Registrar": w.registrar or "N/A",
+                        "Creation Date": str(w.creation_date) if w.creation_date else "N/A",
+                        "Expiration Date": str(w.expiration_date) if w.expiration_date else "N/A",
+                        "Name Servers": ", ".join(w.name_servers) if w.name_servers else "N/A",
+                        "Status": ", ".join(w.status) if w.status else "N/A"
+                    }
+                    result = {
+                        'title': f'WHOIS Lookup: {domain}',
+                        'table': [info]
+                    }
+                except Exception as e:
+                    result = {'error': f'WHOIS failed: {str(e)}'}
+            else:
+                result = {'error': 'Domain required'}
         
         elif tool_name == 'help':
             result = {
-                'title': 'JAGUAR 45 CYBER KIT - Available Tools',
+                'title': 'JAGUAR 45 CYBER KIT - Help',
                 'list': [
-                    "1. Port Scanner - Scan open ports on target",
+                    "Available Tools:",
+                    "1. Port Scanner - Scan open ports",
                     "2. Directory Scanner - Find hidden directories",
-                    "3. Subdomain Finder - Enumerate subdomains",
-                    "4. WHOIS Lookup - Get domain registration info",
-                    "5. DNS Enumeration - Get DNS records",
+                    "3. Subdomain Finder - Find subdomains",
+                    "4. WHOIS Lookup - Domain registration info",
+                    "5. DNS Records - Get DNS information",
                     "6. Header Analyzer - Analyze HTTP headers",
-                    "7. SSL Scanner - Check SSL certificate",
-                    "8. DoS Stress Test - Test server load capacity",
-                    "9. Password Bruteforce - Test login security",
-                    "10. SQL Injection - Test for SQLi vulnerabilities",
-                    "11. XSS Scanner - Test for XSS vulnerabilities",
+                    "7. SSL Checker - Check SSL certificate",
+                    "8. DoS Test - Stress test YOUR servers",
+                    "9. Password Test - Test login credentials",
+                    "10. SQLi Scanner - SQL injection test",
+                    "11. XSS Scanner - Cross-site scripting test",
                     "12. Hash Cracker - Crack password hashes",
-                    "13. IP Information - Get IP address details",
-                    "14. GeoIP Lookup - Get geographical location",
-                    "15. Reverse IP - Find domains on same IP",
-                    "16. Traceroute - Trace network route",
-                    "17. Ping Tool - Check host availability",
-                    "18. Password Checker - Check password strength",
-                    "19. Encrypt/Decrypt - Encryption tools",
-                    "20. Vulnerability Scan - Common vulnerability scan",
-                    "21. Web Crawler - Crawl website structure",
-                    "22. Backup Finder - Find backup files",
+                    "13. IP Information - Get IP details",
+                    "14. GeoIP Lookup - IP geolocation",
+                    "15. Ping Test - Check host availability",
+                    "16. Traceroute - Network path tracing",
+                    "17. Website Info - Get website information",
+                    "18. Password Check - Check password strength",
+                    "19. Encryption Tool - Encrypt/decrypt text",
+                    "20. Backup Finder - Find backup files",
+                    "21. CMS Detector - Detect CMS platform",
+                    "22. Email Validator - Validate email address",
                     "",
-                    "Click any tool button or type the number in command line"
+                    "Usage: Click any tool button or type number (1-22)",
+                    "Type 'clear' to clear terminal",
+                    "Type 'about' for information about this kit"
                 ]
             }
         
         elif tool_name == 'about':
             result = {
-                'title': 'About JAGUAR 45 CYBER KIT v2.0',
+                'title': 'About JAGUAR 45 CYBER KIT v2.1',
                 'list': [
-                    "Version: 2.0 - Real Working Edition",
+                    "Version: 2.1 - Render Compatible",
                     "Developed by: Charlie Syllas and Jaguar 45",
                     "Year: 2026",
-                    "License: For authorized security testing only",
+                    "Purpose: Cybersecurity testing toolkit",
+                    "License: For authorized use only",
                     "",
-                    "⚠️  IMPORTANT NOTES:",
-                    "- All tools are fully functional and real",
-                    "- Use only on systems you own or have permission to test",
-                    "- The DoS tool is for stress testing YOUR OWN servers",
-                    "- Bruteforce tool is for testing YOUR OWN login systems",
-                    "- Always comply with applicable laws and regulations",
+                    "⚠️ IMPORTANT LEGAL NOTICE:",
+                    "All tools are for EDUCATIONAL and AUTHORIZED testing only.",
+                    "Only test systems you OWN or have EXPLICIT PERMISSION to test.",
+                    "Unauthorized testing is ILLEGAL and UNETHICAL.",
                     "",
-                    "This toolkit is designed for:",
-                    "• Security professionals",
-                    "• System administrators",
-                    "• Penetration testers",
-                    "• Ethical hackers",
-                    "• Security researchers"
+                    "Features:",
+                    "• 22+ real working cybersecurity tools",
+                    "• Port scanning and vulnerability detection",
+                    "• Network analysis and information gathering",
+                    "• Security assessment tools",
+                    "• Real DoS testing for YOUR servers",
+                    "• Password security testing",
+                    "• Fully web-based interface",
+                    "• Render cloud compatible"
                 ]
             }
         
-        elif tool_name == 'system_info':
+        elif tool_name == 'sysinfo':
             import platform
             result = {
                 'title': 'System Information',
                 'list': [
-                    f"Python: {platform.python_version()}",
-                    f"OS: {platform.system()} {platform.release()}",
+                    f"Python Version: {platform.python_version()}",
+                    f"Operating System: {platform.system()} {platform.release()}",
                     f"Architecture: {platform.machine()}",
-                    f"Processor: {platform.processor()}",
                     f"Hostname: {socket.gethostname()}",
-                    f"IP Address: {socket.gethostbyname(socket.gethostname())}",
-                    f"CPU Cores: {os.cpu_count()}",
-                    f"Memory: {os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES') / (1024**3):.1f} GB",
-                    f"Current Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    f"CPU Cores: {os.cpu_count() or 'N/A'}",
+                    f"Current Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    f"Working Directory: {os.getcwd()}",
+                    f"Total Tools: 22"
                 ]
             }
         
-        if result:
-            return jsonify({'success': True, 'result': result})
         else:
-            return jsonify({'error': 'Tool not found or invalid parameters'})
+            result = {'error': f'Tool not found: {tool_name}'}
+        
+        return jsonify(result)
     
     except Exception as e:
         return jsonify({'error': str(e)})
@@ -1479,47 +1460,22 @@ def run_tool():
 def handle_command():
     try:
         data = request.get_json()
-        command = data.get('command', '').strip()
+        command = data.get('command', '').strip().lower()
         
-        if command == 'help':
-            return jsonify({
-                'output': 'Type tool number (1-22) or use sidebar buttons. Type "about" for info.',
-                'type': 'info'
-            })
+        responses = {
+            'help': 'Type a number 1-22 or click tool buttons in sidebar',
+            'clear': 'Use the Clear Terminal button in sidebar',
+            'version': 'JAGUAR 45 CYBER KIT v2.1',
+            'status': 'System operational - All tools ready',
+            'ls': '1  2  3  4  5  6  7  8  9  10  11  12  13  14  15  16  17  18  19  20  21  22',
+            'tools': '22 tools available - Use numbers 1-22',
+            'exit': 'System cannot be exited from web interface'
+        }
         
-        elif command == 'clear':
-            return jsonify({'output': 'Use the Clear button in sidebar', 'type': 'info'})
-        
-        elif command == 'about':
-            return jsonify({
-                'output': 'JAGUAR 45 CYBER KIT v2.0 - Real Working Tools for Authorized Testing',
-                'type': 'info'
-            })
-        
-        elif command.isdigit() and 1 <= int(command) <= 22:
-            # Map numbers to tools
-            tool_map = {
-                1: 'port_scan', 2: 'dir_scan', 3: 'subdomain',
-                4: 'whois', 5: 'dns_enum', 6: 'header_scan',
-                7: 'ssl_scan', 8: 'dos_test', 9: 'bruteforce',
-                10: 'sqli', 11: 'xss', 12: 'hash_crack',
-                13: 'ip_info', 14: 'geoip', 15: 'reverse_ip',
-                16: 'traceroute', 17: 'ping', 18: 'pwd_check',
-                19: 'encrypt', 20: 'vuln_scan', 21: 'web_crawl',
-                22: 'backup_find'
-            }
-            
-            tool_name = tool_map.get(int(command))
-            return jsonify({
-                'output': f'Tool #{command} selected. Please use the sidebar button for {tool_name.replace("_", " ")}.',
-                'type': 'info'
-            })
-        
+        if command in responses:
+            return jsonify({'output': responses[command], 'type': 'info'})
         else:
-            return jsonify({
-                'output': f'Unknown command: {command}. Type "help" for available commands.',
-                'type': 'error'
-            })
+            return jsonify({'output': f'Command not found: {command}', 'type': 'error'})
     
     except Exception as e:
         return jsonify({'output': f'Error: {str(e)}', 'type': 'error'})
@@ -1529,7 +1485,8 @@ def health():
     return jsonify({
         'status': 'healthy',
         'service': 'Jaguar 45 Cyber Kit',
-        'version': '2.0',
+        'version': '2.1',
+        'tools': 22,
         'timestamp': datetime.now().isoformat()
     })
 
@@ -1539,16 +1496,21 @@ if __name__ == '__main__':
     
     print("""
     ╔══════════════════════════════════════════════════════════╗
-    ║      JAGUAR 45 CYBER KIT v2.0 - REAL WORKING TOOLS       ║
+    ║      JAGUAR 45 CYBER KIT v2.1 - RENDER COMPATIBLE        ║
     ║      Developed by Charlie Syllas and Jaguar 45           ║
     ║      Year: 2026                                          ║
     ║                                                          ║
-    ║      ⚠️  WARNING: FOR AUTHORIZED TESTING ONLY!          ║
+    ║      Server running on port: {port}                      ║
+    ║      Open http://localhost:{port} in your browser        ║
     ║                                                          ║
-    ║      Server running on: http://localhost:{port}          ║
-    ║      Press Ctrl+C to stop                                ║
+    ║      ⚠️  WARNING: For authorized testing only!          ║
     ╚══════════════════════════════════════════════════════════╝
     """.format(port=port))
     
-    # Disable debug mode for production
-    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+    # Production settings for Render
+    app.run(
+        host='0.0.0.0',
+        port=port,
+        debug=False,
+        threaded=True
+    )

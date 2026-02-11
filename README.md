@@ -36,7 +36,7 @@ Quick Install
 
 ```bash
 # Clone the repository
-git clone https://github.com/charliesyllas/blueghost.git
+git clone https://github.com/charlietech255/scaner.git
 cd blueghost
 
 # Install dependencies
@@ -160,32 +160,7 @@ advanced:
   max_retries: 3
   packet_size: 1024
   custom_user_agent: "Mozilla/5.0 (BlueGhost/2.1)"
-```
-
----
-
-📁 Project Structure
-
-```
-blueghost/
-├── blueghost.py              # Main entry point
-├── core/
-│   ├── scanner.py           # Port scanning engine
-│   ├── detector.py          # OS & service detection
-│   └── vuln_checker.py     # Vulnerability assessment
-├── modules/
-│   ├── shodan_lookup.py    # Shodan integration
-│   ├── web_scanner.py      # Web app testing
-│   └── exploit_matcher.py  # ExploitDB correlation
-├── reports/
-│   ├── html_generator.py   # HTML report builder
-│   └── pdf_exporter.py     # PDF generation
-├── utils/
-│   ├── network.py          # Network utilities
-│   └── validators.py       # Input validation
-├── requirements.txt        # Dependencies
-└── README.md              # Documentation
-```
+`
 
 ---
 

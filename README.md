@@ -2,10 +2,6 @@ JAGUAR 45 Tool🚀
 
 A powerful reconnaissance and vulnerability scanning tool developed by Charlie Syllas & Jaguar 45
 
-https://img.shields.io/badge/license-MIT-blue.svg
-https://img.shields.io/badge/python-3.8%2B-yellow
-https://img.shields.io/badge/version-2.1.0-green
-
 ---
 
 📋 Overview
